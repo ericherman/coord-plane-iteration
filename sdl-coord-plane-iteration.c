@@ -169,10 +169,8 @@ struct coordinate_plane_s {
 	unsigned screen_height;
 	long double cx_min;
 	long double cx_max;
-	long double coord_width;
 	long double cy_min;
 	long double cy_max;
-	long double coord_height;
 	long double point_width;
 	long double point_height;
 
@@ -188,7 +186,9 @@ static inline long double _dmax(long double a, long double b)
 struct coordinate_plane_s *new_coordinate_plane(unsigned screen_width,
 						unsigned screen_height,
 						long double cx_min,
-						long double cx_max)
+						long double cx_max,
+						long double cy_min,
+						long double cy_max)
 {
 	size_t size = sizeof(struct coordinate_plane_s);
 	struct coordinate_plane_s *plane = malloc(size);
@@ -196,19 +196,19 @@ struct coordinate_plane_s *new_coordinate_plane(unsigned screen_width,
 		die("could not allocate %zu bytes?", size);
 	}
 
-	plane->cx_min = cx_min;
-	plane->cx_max = cx_max;
 	plane->screen_width = screen_width;
 	plane->screen_height = screen_height;
-	plane->coord_width = (plane->cx_max - plane->cx_min);
-	plane->cy_min =
-	    _dmax(cx_max,
-		  ((plane->coord_width) *
-		   ((1.0 * screen_height) / screen_width)) / 2);
-	plane->cy_max = -(plane->cy_min);
-	plane->coord_height = (plane->cy_max - plane->cy_min);
-	plane->point_width = plane->coord_width / screen_width;
-	plane->point_height = plane->coord_height / screen_height;
+
+	plane->cx_min = cx_min;
+	plane->cx_max = cx_max;
+	long double coord_width = (plane->cx_max - plane->cx_min);
+	plane->point_width = coord_width / screen_width;
+
+	plane->cy_min = cy_min;
+	plane->cy_max = cy_max;
+	long double coord_height = (plane->cy_max - plane->cy_min);
+	plane->point_height = coord_height / screen_height;
+
 	plane->points = NULL;
 	plane->len = plane->screen_width * plane->screen_height;
 
@@ -292,6 +292,12 @@ struct human_input {
 
 	struct keyboard_key right;
 	struct keyboard_key d;
+
+	struct keyboard_key page_up;
+	struct keyboard_key z;
+
+	struct keyboard_key page_down;
+	struct keyboard_key x;
 
 	struct keyboard_key q;
 	struct keyboard_key space;
@@ -398,6 +404,16 @@ int process_input(struct human_input *input, int *press)
 		*press = 'd';
 		return 0;
 	}
+	if ((input->x.is_down && !input->x.was_down) ||
+	    (input->page_up.is_down && !input->page_up.was_down)) {
+		*press = 'x';
+		return 0;
+	}
+	if ((input->z.is_down && !input->z.was_down) ||
+	    (input->page_down.is_down && !input->page_down.was_down)) {
+		*press = 'z';
+		return 0;
+	}
 
 	return 0;
 }
@@ -467,6 +483,18 @@ void init_input(struct human_input *input)
 	input->d.is_down = 0;
 	input->d.was_down = 0;
 
+	input->page_down.is_down = 0;
+	input->page_down.was_down = 0;
+
+	input->z.is_down = 0;
+	input->z.was_down = 0;
+
+	input->page_up.is_down = 0;
+	input->page_up.was_down = 0;
+
+	input->x.is_down = 0;
+	input->x.was_down = 0;
+
 	input->q.is_down = 0;
 	input->q.was_down = 0;
 
@@ -477,13 +505,16 @@ void init_input(struct human_input *input)
 	input->esc.was_down = 0;
 }
 
-void print_directions(const char *title, long double cx_min, long double cx_max)
+void print_directions(const char *title, long double cx_min, long double cx_max,
+		      long double cy_min, long double cy_max)
 {
 	printf("\n\n%s\n", title);
-	printf("use arrows or 'wasd' keys to zoom and pan\n");
+	printf("use arrows or 'wasd' keys to pan\n");
+	printf("use page_down/page_up or 'z' and 'x' keys to zoom in/out\n");
 	printf("space will cycle through available functions\n");
 	printf("escape or 'q' to quit\n");
 	printf("x-axis co-ordinates range from: %Lf to: %Lf\n", cx_min, cx_max);
+	printf("y-axis co-ordinates range from: %Lf to: %Lf\n", cy_min, cy_max);
 }
 
 struct sdl_texture_buffer {
@@ -585,6 +616,15 @@ static void sdl_process_key_event(struct sdl_event_context *event_ctx,
 		input->right.is_down = is_down;
 		input->right.was_down = was_down;
 		break;
+	case SDL_SCANCODE_PAGEUP:
+		input->page_up.is_down = is_down;
+		input->page_up.was_down = was_down;
+		break;
+	case SDL_SCANCODE_PAGEDOWN:
+		input->page_down.is_down = is_down;
+		input->page_down.was_down = was_down;
+		break;
+
 	case SDL_SCANCODE_A:
 		input->a.is_down = is_down;
 		input->a.was_down = was_down;
@@ -604,6 +644,14 @@ static void sdl_process_key_event(struct sdl_event_context *event_ctx,
 	case SDL_SCANCODE_W:
 		input->w.is_down = is_down;
 		input->w.was_down = was_down;
+		break;
+	case SDL_SCANCODE_X:
+		input->x.is_down = is_down;
+		input->x.was_down = was_down;
+		break;
+	case SDL_SCANCODE_Z:
+		input->z.is_down = is_down;
+		input->z.was_down = was_down;
 		break;
 	default:
 		break;
@@ -704,6 +752,7 @@ int main(int argc, const char **argv)
 		{ square_binomial_ignore_y2_and_add_orig,
 		 "square_binomial_ignore_y2_and_add_orig," }
 	};
+	size_t nflen = 5;
 
 	int window_x = argc > 1 ? atoi(argv[1]) : 800;
 	int window_y = argc > 2 ? atoi(argv[2]) : (window_x * 3) / 4;
@@ -717,13 +766,16 @@ int main(int argc, const char **argv)
 			sscanf(argv[4], "%Lf", &cx_max);
 		}
 	}
+	long double coord_width = cx_max - cx_min;
+	long double cy_min = (coord_width * ((1.0 * window_y) / window_x)) / 2;
+	long double cy_max = -cy_min;
 
 	int func_idx = argc > 5 ? atoi(argv[5]) : 0;
 
 	if (window_x <= 0 || window_y <= 0) {
 		die("window_x = %d\nwindow_y = %d\n", window_x, window_y);
 	}
-	if (func_idx < 0 || func_idx > 4) {
+	if (func_idx < 0 || func_idx >= nflen) {
 		func_idx = 0;
 	}
 	const char *title = nf[func_idx].name;
@@ -762,8 +814,9 @@ int main(int argc, const char **argv)
 	unsigned long escaped = 0;
 	unsigned long not_escaped = 0;
 	struct coordinate_plane_s *coord_plane =
-	    new_coordinate_plane(window_x, window_y, cx_min, cx_max);
-	print_directions(title, cx_min, cx_max);
+	    new_coordinate_plane(window_x, window_y, cx_min, cx_max, cy_min,
+				 cy_max);
+	print_directions(title, cx_min, cx_max, cy_min, cy_max);
 	update_pixel_buffer(coord_plane, virtual_win, &escaped, &not_escaped);
 
 	int x = SDL_WINDOWPOS_UNDEFINED;
@@ -826,57 +879,71 @@ int main(int argc, const char **argv)
 			}
 		}
 
+		int restart = 0;
 		int press = 0;
 		if (shutdown || (shutdown = process_input(new_input, &press))) {
 			break;
 		}
-		if (event_ctx.resized || press) {
+		if (event_ctx.resized) {
+			restart = 1;
 			SDL_GetWindowSize(window, &window_x, &window_y);
-			delete_coordinate_plane(coord_plane);
-
-			long double diff = cx_max - cx_min;
+		}
+		if (press) {
+			restart = 1;
+			long double x_diff = cx_max - cx_min;
+			long double y_diff = cy_max - cy_min;
+			long double x_pan_diff = x_diff / 4;
+			long double y_pan_diff = y_diff / 4;
+			long double x_zoom_diff = x_diff / 8;
+			long double y_zoom_diff = y_diff / 8;
 			switch (press) {
-			case 'w':{
-					long double zoom_diff = diff / 8;
-					cx_min = cx_min + zoom_diff;
-					cx_max = cx_max - zoom_diff;
-					break;
+			case 'z':
+				cx_min = cx_min + x_zoom_diff;
+				cx_max = cx_max - x_zoom_diff;
+				cy_min = cy_min + y_zoom_diff;
+				cy_max = cy_max - y_zoom_diff;
+				break;
+			case 'x':
+				cx_min = cx_min - x_zoom_diff;
+				cx_max = cx_max + x_zoom_diff;
+				cy_min = cy_min - y_zoom_diff;
+				cy_max = cy_max + y_zoom_diff;
+				break;
+			case 'w':
+				cy_max = cy_max + y_pan_diff;
+				cy_min = cy_min + y_pan_diff;
+				break;
+			case 's':
+				cy_max = cy_max - y_pan_diff;
+				cy_min = cy_min - y_pan_diff;
+				break;
+			case 'a':
+				cx_min = cx_min - x_pan_diff;
+				cx_max = cx_max - x_pan_diff;
+				break;
+			case 'd':
+				cx_min = cx_min + x_pan_diff;
+				cx_max = cx_max + x_pan_diff;
+				break;
+			case ' ':
+				++func_idx;
+				if (func_idx < 0 || func_idx >= nflen) {
+					func_idx = 0;
 				}
-			case 's':{
-					long double zoom_diff = diff / 8;
-					cx_min = cx_min - zoom_diff;
-					cx_max = cx_max + zoom_diff;
-					break;
-				}
-			case 'a':{
-					long double pan_diff = diff / 4;
-					cx_min = cx_min - pan_diff;
-					cx_max = cx_max - pan_diff;
-					break;
-				}
-			case 'd':{
-					long double pan_diff = diff / 4;
-					cx_min = cx_min + pan_diff;
-					cx_max = cx_max + pan_diff;
-					break;
-				}
-			case ' ':{
-					++func_idx;
-					if (func_idx < 0 || func_idx > 4) {
-						func_idx = 0;
-					}
-					title = nf[func_idx].name;
-					SDL_SetWindowTitle(window, title);
-
-				}
+				title = nf[func_idx].name;
+				SDL_SetWindowTitle(window, title);
+				break;
 			default:
 				/* reset */
 				break;
 			}
-
-			coord_plane = new_coordinate_plane(window_x, window_y,
-							   cx_min, cx_max);
-			print_directions(title, cx_min, cx_max);
+		}
+		if (restart) {
+			delete_coordinate_plane(coord_plane);
+			coord_plane =
+			    new_coordinate_plane(window_x, window_y, cx_min,
+						 cx_max, cy_min, cy_max);
+			print_directions(title, cx_min, cx_max, cy_min, cy_max);
 			event_ctx.resized = 0;
 			iteration_count = 0;
 		}
