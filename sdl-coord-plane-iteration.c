@@ -996,12 +996,12 @@ int main(int argc, const char **argv)
 				cy_max = cy_max + y_zoom_diff;
 				break;
 			case 'w':
-				cy_max = cy_max + y_pan_diff;
-				cy_min = cy_min + y_pan_diff;
-				break;
-			case 's':
 				cy_max = cy_max - y_pan_diff;
 				cy_min = cy_min - y_pan_diff;
+				break;
+			case 's':
+				cy_max = cy_max + y_pan_diff;
+				cy_min = cy_min + y_pan_diff;
 				break;
 			case 'a':
 				cx_min = cx_min - x_pan_diff;
