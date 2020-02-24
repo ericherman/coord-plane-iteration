@@ -6,7 +6,7 @@
    cc -g -O2 `sdl2-config --cflags` \
       ./sdl-coord-plane-iteration.c \
       -o ./sdl-coord-plane-iteration \
-      `sdl2-config --libs` &&
+      `sdl2-config --libs` -lm &&
    ./sdl-coord-plane-iteration
 */
 
@@ -304,50 +304,130 @@ struct human_input {
 	struct keyboard_key esc;
 };
 
-struct rgb_s {
-	unsigned char r;
-	unsigned char g;
-	unsigned char b;
+struct rgb24_s {
+	unsigned char red;
+	unsigned char green;
+	unsigned char blue;
 };
 
-unsigned int rgb_for_escape(unsigned int iterations)
+// values are from 0.0 to 1.0
+struct rgb_s {
+	double red;
+	double green;
+	double blue;
+};
+
+// hue is 0.0 to 360.0
+// saturation and value are 0.0 to 0.1
+struct hsv_s {
+	double hue;
+	double sat;
+	double val;
+};
+
+int invalid_hsv_s(struct hsv_s hsv)
 {
-	if (iterations == 0) {
+	if (!(hsv.hue >= 0.0 && hsv.hue <= 360.0)) {
+		return 1;
+	}
+	if (!(hsv.sat >= 0 && hsv.sat <= 1.0)) {
+		return 1;
+	}
+	if (!(hsv.val >= 0 && hsv.val <= 1.0)) {
+		return 1;
+	}
+	return 0;
+}
+
+void rgb24_from_rgb(struct rgb24_s *out, struct rgb_s in)
+{
+	out->red = 255 * in.red;
+	out->green = 255 * in.green;
+	out->blue = 255 * in.blue;
+}
+
+static unsigned int rgb24_to_uint(struct rgb24_s rgb)
+{
+	unsigned int urgb = ((rgb.red << 16) + (rgb.green << 8) + rgb.blue);
+	return urgb;
+}
+
+// https://dystopiancode.blogspot.com/2012/06/hsv-rgb-conversion-algorithms-in-c.html
+// https://en.wikipedia.org/wiki/HSL_and_HSV
+int rgb_from_hsv(struct rgb_s *rgb, struct hsv_s hsv)
+{
+	if (!rgb || invalid_hsv_s(hsv)) {
+		return 1;
+	}
+
+	double hue = hsv.hue == 360.0 ? 0.0 : hsv.hue;
+	double chroma = hsv.val * hsv.sat;
+	double offset = chroma * (1.0 - fabs(fmod(hue / 60.0, 2) - 1.0));
+	double smallm = hsv.val - chroma;
+
+	if (hue >= 0.0 && hue < 60.0) {
+		rgb->red = chroma + smallm;
+		rgb->green = offset + smallm;
+		rgb->blue = smallm;
+	} else if (hue >= 60.0 && hue < 120.0) {
+		rgb->red = offset + smallm;
+		rgb->green = chroma + smallm;
+		rgb->blue = smallm;
+	} else if (hue >= 120.0 && hue < 180.0) {
+		rgb->red = smallm;
+		rgb->green = chroma + smallm;
+		rgb->blue = offset + smallm;
+	} else if (hue >= 180.0 && hue < 240.0) {
+		rgb->red = smallm;
+		rgb->green = offset + smallm;
+		rgb->blue = chroma + smallm;
+	} else if (hue >= 240.0 && hue < 300.0) {
+		rgb->red = offset + smallm;
+		rgb->green = smallm;
+		rgb->blue = chroma + smallm;
+	} else if (hue >= 300.0 && hue < 360.0) {
+		rgb->red = chroma + smallm;
+		rgb->green = smallm;
+		rgb->blue = offset + smallm;
+	} else {
+		rgb->red = smallm;
+		rgb->green = smallm;
+		rgb->blue = smallm;
+	}
+
+	return 0;
+}
+
+void bright_palette(struct rgb24_s *palette, size_t len)
+{
+	struct rgb_s tmp;
+	for (size_t i = 0; i < len; ++i) {
+		double hue = 360.0 - ((360.0 / len) * i);
+		struct hsv_s hsv;
+		hsv.hue = hue;
+		hsv.sat = 1.0;
+		hsv.val = 1.0;
+		rgb_from_hsv(&tmp, hsv);
+		rgb24_from_rgb(palette + i, tmp);
+	}
+}
+
+unsigned int rgb_for_escape(unsigned int escaped, struct rgb24_s *palette,
+			    size_t len)
+{
+	if (escaped == 0) {
 		return 0;
 	}
-	struct rgb_s pallet[] = {
-		{ 255, 0, 0 },
-		{ 0, 255, 0 },
-		{ 0, 0, 255 },
 
-		{ 255, 255, 0 },
-		{ 0, 255, 255 },
-		{ 255, 0, 255 },
+	size_t palette_idx = (escaped % len);
 
-		{ 255, 127, 0 },
-		{ 255, 0, 127 },
-		{ 0, 255, 127 },
-		{ 127, 255, 0 },
-		{ 127, 0, 255 },
-		{ 0, 127, 255 },
-
-		{ 127, 127, 0 },
-		{ 127, 0, 127 },
-		{ 0, 127, 127 },
-		{ 127, 127, 0 },
-		{ 127, 0, 127 },
-		{ 0, 127, 127 }
-	};
-
-	struct rgb_s rgb = pallet[iterations % 18];
-
-	unsigned int urgb = ((rgb.r << 16) + (rgb.g << 8) + rgb.b);
-
+	unsigned int urgb = rgb24_to_uint(palette[palette_idx]);
 	return urgb;
 }
 
 void update_pixel_buffer(struct coordinate_plane_s *plane,
 			 struct pixel_buffer *virtual_win,
+			 struct rgb24_s *palette, size_t palette_len,
 			 unsigned long *escaped, unsigned long *not_escaped)
 {
 	assert(plane->screen_width == virtual_win->width);
@@ -360,7 +440,8 @@ void update_pixel_buffer(struct coordinate_plane_s *plane,
 		for (unsigned int x = 0; x < plane->screen_width; x++) {
 			size_t i = (y * plane->screen_width) + x;
 			struct iterxy_s *p = plane->points + i;
-			unsigned int foreground = rgb_for_escape(p->escaped);
+			unsigned int foreground =
+			    rgb_for_escape(p->escaped, palette, palette_len);
 			if (p->escaped) {
 				++(*escaped);
 			} else {
@@ -757,6 +838,10 @@ int main(int argc, const char **argv)
 	int window_x = argc > 1 ? atoi(argv[1]) : 800;
 	int window_y = argc > 2 ? atoi(argv[2]) : (window_x * 3) / 4;
 
+	size_t palette_len = 15;
+	struct rgb24_s palette[palette_len];
+	bright_palette(palette, palette_len);
+
 	/* define the range of the X dimension */
 	long double cx_min = -2.5;
 	long double cx_max = 1.5;
@@ -770,12 +855,12 @@ int main(int argc, const char **argv)
 	long double cy_min = (coord_width * ((1.0 * window_y) / window_x)) / 2;
 	long double cy_max = -cy_min;
 
-	int func_idx = argc > 5 ? atoi(argv[5]) : 0;
+	unsigned func_idx = argc > 5 ? (unsigned)atoi(argv[5]) : 0U;
 
 	if (window_x <= 0 || window_y <= 0) {
 		die("window_x = %d\nwindow_y = %d\n", window_x, window_y);
 	}
-	if (func_idx < 0 || func_idx >= nflen) {
+	if (func_idx >= nflen) {
 		func_idx = 0;
 	}
 	const char *title = nf[func_idx].name;
@@ -817,7 +902,8 @@ int main(int argc, const char **argv)
 	    new_coordinate_plane(window_x, window_y, cx_min, cx_max, cy_min,
 				 cy_max);
 	print_directions(title, cx_min, cx_max, cy_min, cy_max);
-	update_pixel_buffer(coord_plane, virtual_win, &escaped, &not_escaped);
+	update_pixel_buffer(coord_plane, virtual_win, palette, palette_len,
+			    &escaped, &not_escaped);
 
 	int x = SDL_WINDOWPOS_UNDEFINED;
 	int y = SDL_WINDOWPOS_UNDEFINED;
@@ -927,7 +1013,7 @@ int main(int argc, const char **argv)
 				break;
 			case ' ':
 				++func_idx;
-				if (func_idx < 0 || func_idx >= nflen) {
+				if (func_idx >= nflen) {
 					func_idx = 0;
 				}
 				title = nf[func_idx].name;
@@ -949,8 +1035,8 @@ int main(int argc, const char **argv)
 		}
 
 		iterate_plane(coord_plane, nf[func_idx].pfunc);
-		update_pixel_buffer(coord_plane, virtual_win, &escaped,
-				    &not_escaped);
+		update_pixel_buffer(coord_plane, virtual_win, palette,
+				    palette_len, &escaped, &not_escaped);
 		sdl_blit_texture(renderer, &texture_buf);
 
 		iteration_count++;
