@@ -398,11 +398,20 @@ int rgb_from_hsv(struct rgb_s *rgb, struct hsv_s hsv)
 	return 0;
 }
 
-void bright_palette(struct rgb24_s *palette, size_t len)
+void bright_palette_range(double from, double to, struct rgb24_s *palette,
+			  size_t len)
 {
+	assert(from < to);
+	assert(from >= 0.0);
+	assert(to <= 360.);
+
+	double distance = to - from;
 	struct rgb_s tmp;
 	for (size_t i = 0; i < len; ++i) {
-		double hue = 360.0 - ((360.0 / len) * i);
+		double hue = from + (distance - ((distance / len) * i));
+		if (hue > 360.0) {
+			hue = fmod(hue, 360.0);
+		}
 		struct hsv_s hsv;
 		hsv.hue = hue;
 		hsv.sat = 1.0;
@@ -412,14 +421,29 @@ void bright_palette(struct rgb24_s *palette, size_t len)
 	}
 }
 
-unsigned int rgb_for_escape(unsigned int escaped, struct rgb24_s *palette,
-			    size_t len)
+void bright_palette(struct rgb24_s *palette, size_t len)
+{
+	bright_palette_range(0.0, 360.0, palette, len);
+}
+
+unsigned int rgb_for_escape(unsigned int highlight_latest,
+			    unsigned int iterations, unsigned int escaped,
+			    struct rgb24_s *palette, size_t len)
 {
 	if (escaped == 0) {
 		return 0;
 	}
 
-	size_t palette_idx = (escaped % len);
+	size_t palette_idx;
+	if ((highlight_latest) && (escaped <= len / 3)) {
+		palette_idx = escaped;
+	} else if ((highlight_latest)
+		   && (((1.0 * escaped) / iterations) < 0.75)) {
+		palette_idx =
+		    (len / 3) + (((1.0 * escaped) / iterations) * (len / 3));
+	} else {
+		palette_idx = (escaped % len);
+	}
 
 	unsigned int urgb = rgb24_to_uint(palette[palette_idx]);
 	return urgb;
@@ -427,6 +451,7 @@ unsigned int rgb_for_escape(unsigned int escaped, struct rgb24_s *palette,
 
 void update_pixel_buffer(struct coordinate_plane_s *plane,
 			 struct pixel_buffer *virtual_win,
+			 unsigned int highlight_latest, unsigned int iterations,
 			 struct rgb24_s *palette, size_t palette_len,
 			 unsigned long *escaped, unsigned long *not_escaped)
 {
@@ -441,7 +466,8 @@ void update_pixel_buffer(struct coordinate_plane_s *plane,
 			size_t i = (y * plane->screen_width) + x;
 			struct iterxy_s *p = plane->points + i;
 			unsigned int foreground =
-			    rgb_for_escape(p->escaped, palette, palette_len);
+			    rgb_for_escape(highlight_latest, iterations,
+					   p->escaped, palette, palette_len);
 			if (p->escaped) {
 				++(*escaped);
 			} else {
@@ -855,7 +881,8 @@ int main(int argc, const char **argv)
 	long double cy_min = (coord_width * ((1.0 * window_y) / window_x)) / 2;
 	long double cy_max = -cy_min;
 
-	unsigned func_idx = argc > 5 ? (unsigned)atoi(argv[5]) : 0U;
+	unsigned int func_idx = argc > 5 ? (unsigned)atoi(argv[5]) : 0U;
+	unsigned int highlight_latest = argc > 6 ? (unsigned)atoi(argv[6]) : 0U;
 
 	if (window_x <= 0 || window_y <= 0) {
 		die("window_x = %d\nwindow_y = %d\n", window_x, window_y);
@@ -902,8 +929,8 @@ int main(int argc, const char **argv)
 	    new_coordinate_plane(window_x, window_y, cx_min, cx_max, cy_min,
 				 cy_max);
 	print_directions(title, cx_min, cx_max, cy_min, cy_max);
-	update_pixel_buffer(coord_plane, virtual_win, palette, palette_len,
-			    &escaped, &not_escaped);
+	update_pixel_buffer(coord_plane, virtual_win, highlight_latest, 0,
+			    palette, palette_len, &escaped, &not_escaped);
 
 	int x = SDL_WINDOWPOS_UNDEFINED;
 	int y = SDL_WINDOWPOS_UNDEFINED;
@@ -1035,8 +1062,9 @@ int main(int argc, const char **argv)
 		}
 
 		iterate_plane(coord_plane, nf[func_idx].pfunc);
-		update_pixel_buffer(coord_plane, virtual_win, palette,
-				    palette_len, &escaped, &not_escaped);
+		update_pixel_buffer(coord_plane, virtual_win, highlight_latest,
+				    iteration_count, palette, palette_len,
+				    &escaped, &not_escaped);
 		sdl_blit_texture(renderer, &texture_buf);
 
 		iteration_count++;
