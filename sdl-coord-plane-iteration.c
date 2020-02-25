@@ -174,6 +174,7 @@ struct coordinate_plane_s {
 	long double point_width;
 	long double point_height;
 
+	unsigned long iteration_count;
 	struct iterxy_s *points;
 	size_t len;
 };
@@ -208,6 +209,8 @@ struct coordinate_plane_s *new_coordinate_plane(unsigned screen_width,
 	plane->cy_max = cy_max;
 	long double coord_height = (plane->cy_max - plane->cy_min);
 	plane->point_height = coord_height / screen_height;
+
+	plane->iteration_count = 0;
 
 	plane->points = NULL;
 	plane->len = plane->screen_width * plane->screen_height;
@@ -254,6 +257,7 @@ void delete_coordinate_plane(struct coordinate_plane_s *plane)
 
 void iterate_plane(struct coordinate_plane_s *plane, pfunc_f pfunc)
 {
+	plane->iteration_count++;
 	for (size_t j = 0; j < plane->len; ++j) {
 		struct iterxy_s *p = plane->points + j;
 		pfunc(p);
@@ -451,9 +455,9 @@ unsigned int rgb_for_escape(unsigned int highlight_latest,
 
 void update_pixel_buffer(struct coordinate_plane_s *plane,
 			 struct pixel_buffer *virtual_win,
-			 unsigned int highlight_latest, unsigned int iterations,
-			 struct rgb24_s *palette, size_t palette_len,
-			 unsigned long *escaped, unsigned long *not_escaped)
+			 unsigned int highlight_latest, struct rgb24_s *palette,
+			 size_t palette_len, unsigned long *escaped,
+			 unsigned long *not_escaped)
 {
 	assert(plane->screen_width == virtual_win->width);
 	assert(plane->screen_height == virtual_win->height);
@@ -466,8 +470,9 @@ void update_pixel_buffer(struct coordinate_plane_s *plane,
 			size_t i = (y * plane->screen_width) + x;
 			struct iterxy_s *p = plane->points + i;
 			unsigned int foreground =
-			    rgb_for_escape(highlight_latest, iterations,
-					   p->escaped, palette, palette_len);
+			    rgb_for_escape(highlight_latest,
+					   plane->iteration_count, p->escaped,
+					   palette, palette_len);
 			if (p->escaped) {
 				++(*escaped);
 			} else {
@@ -476,6 +481,50 @@ void update_pixel_buffer(struct coordinate_plane_s *plane,
 			*(virtual_win->pixels + (y * virtual_win->width) + x) =
 			    foreground;
 		}
+	}
+}
+
+void pan_and_zoom(int press, long double *cx_min, long double *cx_max,
+		  long double *cy_min, long double *cy_max)
+{
+	long double x_diff = *cx_max - *cx_min;
+	long double y_diff = *cy_max - *cy_min;
+	long double x_pan_diff = x_diff / 4;
+	long double y_pan_diff = y_diff / 4;
+	long double x_zoom_diff = x_diff / 8;
+	long double y_zoom_diff = y_diff / 8;
+	switch (press) {
+	case 'z':
+		*cx_min = *cx_min + x_zoom_diff;
+		*cx_max = *cx_max - x_zoom_diff;
+		*cy_min = *cy_min + y_zoom_diff;
+		*cy_max = *cy_max - y_zoom_diff;
+		break;
+	case 'x':
+		*cx_min = *cx_min - x_zoom_diff;
+		*cx_max = *cx_max + x_zoom_diff;
+		*cy_min = *cy_min - y_zoom_diff;
+		*cy_max = *cy_max + y_zoom_diff;
+		break;
+	case 'w':
+		*cy_max = *cy_max - y_pan_diff;
+		*cy_min = *cy_min - y_pan_diff;
+		break;
+	case 's':
+		*cy_max = *cy_max + y_pan_diff;
+		*cy_min = *cy_min + y_pan_diff;
+		break;
+	case 'a':
+		*cx_min = *cx_min - x_pan_diff;
+		*cx_max = *cx_max - x_pan_diff;
+		break;
+	case 'd':
+		*cx_min = *cx_min + x_pan_diff;
+		*cx_max = *cx_max + x_pan_diff;
+		break;
+	default:
+		/* reset */
+		break;
 	}
 }
 
@@ -638,8 +687,8 @@ struct sdl_event_context {
 	int resized;
 };
 
-static void sdl_resize_texture_buf(SDL_Window * window,
-				   SDL_Renderer * renderer,
+static void sdl_resize_texture_buf(SDL_Window *window,
+				   SDL_Renderer *renderer,
 				   struct sdl_texture_buffer *texture_buf)
 {
 	struct pixel_buffer *pixel_buf = texture_buf->pixel_buf;
@@ -668,7 +717,7 @@ static void sdl_resize_texture_buf(SDL_Window * window,
 	}
 }
 
-static void sdl_blit_bytes(SDL_Renderer * renderer, SDL_Texture * texture,
+static void sdl_blit_bytes(SDL_Renderer *renderer, SDL_Texture *texture,
 			   const SDL_Rect * rect, const void *pixels, int pitch)
 {
 	if (SDL_UpdateTexture(texture, rect, pixels, pitch)) {
@@ -678,7 +727,7 @@ static void sdl_blit_bytes(SDL_Renderer * renderer, SDL_Texture * texture,
 	SDL_RenderPresent(renderer);
 }
 
-static void sdl_blit_texture(SDL_Renderer * renderer,
+static void sdl_blit_texture(SDL_Renderer *renderer,
 			     struct sdl_texture_buffer *texture_buf)
 {
 	SDL_Texture *texture = texture_buf->texture;
@@ -929,8 +978,8 @@ int main(int argc, const char **argv)
 	    new_coordinate_plane(window_x, window_y, cx_min, cx_max, cy_min,
 				 cy_max);
 	print_directions(title, cx_min, cx_max, cy_min, cy_max);
-	update_pixel_buffer(coord_plane, virtual_win, highlight_latest, 0,
-			    palette, palette_len, &escaped, &not_escaped);
+	update_pixel_buffer(coord_plane, virtual_win, highlight_latest, palette,
+			    palette_len, &escaped, &not_escaped);
 
 	int x = SDL_WINDOWPOS_UNDEFINED;
 	int y = SDL_WINDOWPOS_UNDEFINED;
@@ -969,7 +1018,6 @@ int main(int argc, const char **argv)
 	unsigned long total_elapsed_seconds = 0;
 	unsigned long frames_since_print = 0;
 	unsigned long frame_count = 0;
-	unsigned long iteration_count = 0;
 
 	struct human_input input[2];
 	init_input(&input[0]);
@@ -1003,52 +1051,14 @@ int main(int argc, const char **argv)
 		}
 		if (press) {
 			restart = 1;
-			long double x_diff = cx_max - cx_min;
-			long double y_diff = cy_max - cy_min;
-			long double x_pan_diff = x_diff / 4;
-			long double y_pan_diff = y_diff / 4;
-			long double x_zoom_diff = x_diff / 8;
-			long double y_zoom_diff = y_diff / 8;
-			switch (press) {
-			case 'z':
-				cx_min = cx_min + x_zoom_diff;
-				cx_max = cx_max - x_zoom_diff;
-				cy_min = cy_min + y_zoom_diff;
-				cy_max = cy_max - y_zoom_diff;
-				break;
-			case 'x':
-				cx_min = cx_min - x_zoom_diff;
-				cx_max = cx_max + x_zoom_diff;
-				cy_min = cy_min - y_zoom_diff;
-				cy_max = cy_max + y_zoom_diff;
-				break;
-			case 'w':
-				cy_max = cy_max - y_pan_diff;
-				cy_min = cy_min - y_pan_diff;
-				break;
-			case 's':
-				cy_max = cy_max + y_pan_diff;
-				cy_min = cy_min + y_pan_diff;
-				break;
-			case 'a':
-				cx_min = cx_min - x_pan_diff;
-				cx_max = cx_max - x_pan_diff;
-				break;
-			case 'd':
-				cx_min = cx_min + x_pan_diff;
-				cx_max = cx_max + x_pan_diff;
-				break;
-			case ' ':
+			pan_and_zoom(press, &cx_min, &cx_max, &cy_min, &cy_max);
+			if (press == ' ') {
 				++func_idx;
 				if (func_idx >= nflen) {
 					func_idx = 0;
 				}
 				title = nf[func_idx].name;
 				SDL_SetWindowTitle(window, title);
-				break;
-			default:
-				/* reset */
-				break;
 			}
 		}
 		if (restart) {
@@ -1058,16 +1068,14 @@ int main(int argc, const char **argv)
 						 cx_max, cy_min, cy_max);
 			print_directions(title, cx_min, cx_max, cy_min, cy_max);
 			event_ctx.resized = 0;
-			iteration_count = 0;
 		}
 
 		iterate_plane(coord_plane, nf[func_idx].pfunc);
 		update_pixel_buffer(coord_plane, virtual_win, highlight_latest,
-				    iteration_count, palette, palette_len,
+				    palette, palette_len,
 				    &escaped, &not_escaped);
 		sdl_blit_texture(renderer, &texture_buf);
 
-		iteration_count++;
 		frame_count++;
 		frames_since_print++;
 
@@ -1092,10 +1100,10 @@ int main(int argc, const char **argv)
 			if (fps_printer) {
 				fprintf(stdout,
 					"iteation: %lu, escaped: %lu, not escaped: %lu fps: %.02f (avg fps: %.f)  \r",
-					iteration_count, escaped, not_escaped,
-					fps,
-					(double)frame_count /
-					(double)total_elapsed_seconds);
+					coord_plane->iteration_count, escaped,
+					not_escaped, fps,
+					((double)frame_count /
+					 (double)total_elapsed_seconds));
 				fflush(stdout);
 			}
 		}
