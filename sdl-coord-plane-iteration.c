@@ -175,6 +175,8 @@ struct coordinate_plane_s {
 	long double point_height;
 
 	unsigned long iteration_count;
+	unsigned long escaped;
+	unsigned long not_escaped;
 	struct iterxy_s *points;
 	size_t len;
 };
@@ -184,7 +186,7 @@ static inline long double _dmax(long double a, long double b)
 	return a > b ? a : b;
 }
 
-struct coordinate_plane_s *new_coordinate_plane(unsigned screen_width,
+struct coordinate_plane_s *coordinate_plane_new(unsigned screen_width,
 						unsigned screen_height,
 						long double cx_min,
 						long double cx_max,
@@ -192,7 +194,7 @@ struct coordinate_plane_s *new_coordinate_plane(unsigned screen_width,
 						long double cy_max)
 {
 	size_t size = sizeof(struct coordinate_plane_s);
-	struct coordinate_plane_s *plane = malloc(size);
+	struct coordinate_plane_s *plane = calloc(1, size);
 	if (!plane) {
 		die("could not allocate %zu bytes?", size);
 	}
@@ -210,13 +212,15 @@ struct coordinate_plane_s *new_coordinate_plane(unsigned screen_width,
 	long double coord_height = (plane->cy_max - plane->cy_min);
 	plane->point_height = coord_height / screen_height;
 
-	plane->iteration_count = 0;
-
 	plane->points = NULL;
 	plane->len = plane->screen_width * plane->screen_height;
 
+	plane->iteration_count = 0;
+	plane->escaped = 0;
+	plane->not_escaped = plane->len;
+
 	size = plane->len * sizeof(struct iterxy_s);
-	plane->points = malloc(size);
+	plane->points = calloc(1, size);
 	if (!plane->points) {
 		die("could not allocate %zu bytes?", size);
 	}
@@ -247,7 +251,7 @@ struct coordinate_plane_s *new_coordinate_plane(unsigned screen_width,
 	return plane;
 }
 
-void delete_coordinate_plane(struct coordinate_plane_s *plane)
+void coordinate_plane_free(struct coordinate_plane_s *plane)
 {
 	if (plane) {
 		free(plane->points);
@@ -255,12 +259,20 @@ void delete_coordinate_plane(struct coordinate_plane_s *plane)
 	free(plane);
 }
 
-void iterate_plane(struct coordinate_plane_s *plane, pfunc_f pfunc)
+void coordinate_plane_iterate(struct coordinate_plane_s *plane, pfunc_f pfunc)
 {
-	plane->iteration_count++;
+	++(plane->iteration_count);
+	plane->escaped = 0;
+	plane->not_escaped = plane->len;
 	for (size_t j = 0; j < plane->len; ++j) {
 		struct iterxy_s *p = plane->points + j;
+
 		pfunc(p);
+
+		if (p->escaped) {
+			++(plane->escaped);
+			--(plane->not_escaped);
+		}
 	}
 }
 
@@ -350,7 +362,7 @@ void rgb24_from_rgb(struct rgb24_s *out, struct rgb_s in)
 	out->blue = 255 * in.blue;
 }
 
-static unsigned int rgb24_to_uint(struct rgb24_s rgb)
+static inline unsigned int rgb24_to_uint(struct rgb24_s rgb)
 {
 	unsigned int urgb = ((rgb.red << 16) + (rgb.green << 8) + rgb.blue);
 	return urgb;
@@ -453,17 +465,19 @@ unsigned int rgb_for_escape(unsigned int highlight_latest,
 	return urgb;
 }
 
-void update_pixel_buffer(struct coordinate_plane_s *plane,
+void pixel_buffer_update(struct coordinate_plane_s *plane,
 			 struct pixel_buffer *virtual_win,
 			 unsigned int highlight_latest, struct rgb24_s *palette,
-			 size_t palette_len, unsigned long *escaped,
-			 unsigned long *not_escaped)
+			 size_t palette_len)
 {
-	assert(plane->screen_width == virtual_win->width);
-	assert(plane->screen_height == virtual_win->height);
-
-	*escaped = 0;
-	*not_escaped = 0;
+	if (plane->screen_width != virtual_win->width) {
+		die("plane->screen_width:%u != virtual_win->width: %u",
+		    plane->screen_width, virtual_win->width);
+	}
+	if (plane->screen_height != virtual_win->height) {
+		die("plane->screen_height:%u != virtual_win->height: %u",
+		    plane->screen_height, virtual_win->height);
+	}
 
 	for (unsigned int y = 0; y < plane->screen_height; y++) {
 		for (unsigned int x = 0; x < plane->screen_width; x++) {
@@ -473,11 +487,6 @@ void update_pixel_buffer(struct coordinate_plane_s *plane,
 			    rgb_for_escape(highlight_latest,
 					   plane->iteration_count, p->escaped,
 					   palette, palette_len);
-			if (p->escaped) {
-				++(*escaped);
-			} else {
-				++(*not_escaped);
-			}
 			*(virtual_win->pixels + (y * virtual_win->width) + x) =
 			    foreground;
 		}
@@ -574,7 +583,7 @@ int process_input(struct human_input *input, int *press)
 	return 0;
 }
 
-static void *resize_pixel_buffer(struct pixel_buffer *buf, int height,
+static void *pixel_buffer_resize(struct pixel_buffer *buf, int height,
 				 int width)
 {
 	if (buf->pixels) {
@@ -584,21 +593,45 @@ static void *resize_pixel_buffer(struct pixel_buffer *buf, int height,
 	buf->height = height;
 	buf->pixels_bytes_len = buf->height * buf->width * buf->bytes_per_pixel;
 	buf->pitch = buf->width * buf->bytes_per_pixel;
-	buf->pixels = malloc(buf->pixels_bytes_len);
+	buf->pixels = calloc(1, buf->pixels_bytes_len);
 	if (!buf->pixels) {
 		die("Could not alloc buf->pixels (%d)", buf->pixels_bytes_len);
 	}
 	return buf->pixels;
 }
 
-static void pixel_buffer_init(struct pixel_buffer *buf)
+static struct pixel_buffer *pixel_buffer_new(unsigned int window_x,
+					     unsigned int window_y)
 {
-	buf->width = 0;
-	buf->height = 0;
+	size_t size = sizeof(struct pixel_buffer);
+	struct pixel_buffer *buf = calloc(1, size);
+	if (!buf) {
+		die("could not allocate %lu bytes?", size);
+	}
+
+	buf->width = window_x;
+	buf->height = window_y;
 	buf->bytes_per_pixel = sizeof(unsigned int);
-	buf->pixels = NULL;
-	buf->pixels_bytes_len = 0;
-	buf->pitch = 0;
+	buf->pitch = (buf->width * buf->bytes_per_pixel);
+	buf->pixels_bytes_len =
+	    (buf->width * buf->height * buf->bytes_per_pixel);
+
+	size = buf->pixels_bytes_len;
+	buf->pixels = calloc(1, size);
+	if (!buf->pixels) {
+		die("could not allocate %zu bytes?", size);
+	}
+
+	return buf;
+}
+
+void pixel_buffer_free(struct pixel_buffer *buf)
+{
+	if (!buf) {
+		return;
+	}
+	free(buf->pixels);
+	free(buf);
 }
 
 static void diff_timespecs(struct timespec start, struct timespec end,
@@ -712,7 +745,7 @@ static void sdl_resize_texture_buf(SDL_Window *window,
 		    SDL_GetError());
 	}
 
-	if (!resize_pixel_buffer(pixel_buf, height, width)) {
+	if (!pixel_buffer_resize(pixel_buf, height, width)) {
 		die("Could not resize pixel_buffer");
 	}
 }
@@ -947,26 +980,7 @@ int main(int argc, const char **argv)
 		    SDL_GetError());
 	}
 
-	size_t size = sizeof(struct pixel_buffer);
-	struct pixel_buffer *virtual_win = malloc(size);
-	if (!virtual_win) {
-		die("could not allocate %lu bytes?", size);
-	}
-	pixel_buffer_init(virtual_win);
-
-	virtual_win->width = window_x;
-	virtual_win->height = window_y;
-	virtual_win->bytes_per_pixel = sizeof(unsigned int);
-	virtual_win->pitch =
-	    (virtual_win->width * virtual_win->bytes_per_pixel);
-	virtual_win->pixels_bytes_len =
-	    (virtual_win->width * virtual_win->height *
-	     virtual_win->bytes_per_pixel);
-	size = virtual_win->pixels_bytes_len;
-	virtual_win->pixels = malloc(size);
-	if (!virtual_win->pixels) {
-		die("could not allocate %zu bytes?", size);
-	}
+	struct pixel_buffer *virtual_win = pixel_buffer_new(window_x, window_y);
 
 	struct sdl_texture_buffer texture_buf;
 	texture_buf.texture = NULL;
@@ -975,11 +989,11 @@ int main(int argc, const char **argv)
 	unsigned long escaped = 0;
 	unsigned long not_escaped = 0;
 	struct coordinate_plane_s *coord_plane =
-	    new_coordinate_plane(window_x, window_y, cx_min, cx_max, cy_min,
+	    coordinate_plane_new(window_x, window_y, cx_min, cx_max, cy_min,
 				 cy_max);
 	print_directions(title, cx_min, cx_max, cy_min, cy_max);
-	update_pixel_buffer(coord_plane, virtual_win, highlight_latest, palette,
-			    palette_len, &escaped, &not_escaped);
+	pixel_buffer_update(coord_plane, virtual_win, highlight_latest, palette,
+			    palette_len);
 
 	int x = SDL_WINDOWPOS_UNDEFINED;
 	int y = SDL_WINDOWPOS_UNDEFINED;
@@ -1062,18 +1076,17 @@ int main(int argc, const char **argv)
 			}
 		}
 		if (restart) {
-			delete_coordinate_plane(coord_plane);
+			coordinate_plane_free(coord_plane);
 			coord_plane =
-			    new_coordinate_plane(window_x, window_y, cx_min,
+			    coordinate_plane_new(window_x, window_y, cx_min,
 						 cx_max, cy_min, cy_max);
 			print_directions(title, cx_min, cx_max, cy_min, cy_max);
 			event_ctx.resized = 0;
 		}
 
-		iterate_plane(coord_plane, nf[func_idx].pfunc);
-		update_pixel_buffer(coord_plane, virtual_win, highlight_latest,
-				    palette, palette_len,
-				    &escaped, &not_escaped);
+		coordinate_plane_iterate(coord_plane, nf[func_idx].pfunc);
+		pixel_buffer_update(coord_plane, virtual_win, highlight_latest,
+				    palette, palette_len);
 		sdl_blit_texture(renderer, &texture_buf);
 
 		frame_count++;
@@ -1100,8 +1113,9 @@ int main(int argc, const char **argv)
 			if (fps_printer) {
 				fprintf(stdout,
 					"iteation: %lu, escaped: %lu, not escaped: %lu fps: %.02f (avg fps: %.f)  \r",
-					coord_plane->iteration_count, escaped,
-					not_escaped, fps,
+					coord_plane->iteration_count,
+					coord_plane->escaped,
+					coord_plane->not_escaped, fps,
 					((double)frame_count /
 					 (double)total_elapsed_seconds));
 				fflush(stdout);
@@ -1121,9 +1135,8 @@ int main(int argc, const char **argv)
 		SDL_Quit();
 
 		/* then collect our own garbage */
-		delete_coordinate_plane(coord_plane);
-		free(virtual_win->pixels);
-		free(virtual_win);
+		coordinate_plane_free(coord_plane);
+		pixel_buffer_free(virtual_win);
 	}
 
 	return 0;
