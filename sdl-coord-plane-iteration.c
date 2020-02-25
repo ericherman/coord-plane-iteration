@@ -294,10 +294,13 @@ struct pixel_buffer {
 	unsigned int width;
 	unsigned int height;
 	unsigned char bytes_per_pixel;
-	unsigned int pixels_bytes_len;
+	size_t pixels_len;
 	/* pitch is bytes in a row of pixel data, including padding */
 	unsigned int pitch;
 	unsigned int *pixels;
+	struct rgb24_s *palette;
+	size_t palette_len;
+
 };
 
 struct keyboard_key {
@@ -475,17 +478,16 @@ unsigned int rgb_for_escape(unsigned int highlight_latest,
 }
 
 void pixel_buffer_update(struct coordinate_plane_s *plane,
-			 struct pixel_buffer *virtual_win,
-			 unsigned int highlight_latest, struct rgb24_s *palette,
-			 size_t palette_len)
+			 struct pixel_buffer *buf,
+			 unsigned int highlight_latest)
 {
-	if (plane->screen_width != virtual_win->width) {
-		die("plane->screen_width:%u != virtual_win->width: %u",
-		    plane->screen_width, virtual_win->width);
+	if (plane->screen_width != buf->width) {
+		die("plane->screen_width:%u != buf->width: %u",
+		    plane->screen_width, buf->width);
 	}
-	if (plane->screen_height != virtual_win->height) {
-		die("plane->screen_height:%u != virtual_win->height: %u",
-		    plane->screen_height, virtual_win->height);
+	if (plane->screen_height != buf->height) {
+		die("plane->screen_height:%u != buf->height: %u",
+		    plane->screen_height, buf->height);
 	}
 
 	for (unsigned int y = 0; y < plane->screen_height; y++) {
@@ -495,9 +497,8 @@ void pixel_buffer_update(struct coordinate_plane_s *plane,
 			unsigned int foreground =
 			    rgb_for_escape(highlight_latest,
 					   plane->iteration_count, p->escaped,
-					   palette, palette_len);
-			*(virtual_win->pixels + (y * virtual_win->width) + x) =
-			    foreground;
+					   buf->palette, buf->palette_len);
+			*(buf->pixels + (y * buf->width) + x) = foreground;
 		}
 	}
 }
@@ -600,17 +601,19 @@ static void *pixel_buffer_resize(struct pixel_buffer *buf, int height,
 	}
 	buf->width = width;
 	buf->height = height;
-	buf->pixels_bytes_len = buf->height * buf->width * buf->bytes_per_pixel;
+	buf->pixels_len = buf->height * buf->width;
+	size_t pixels_bytes_len = buf->pixels_len * buf->bytes_per_pixel;
 	buf->pitch = buf->width * buf->bytes_per_pixel;
-	buf->pixels = calloc(1, buf->pixels_bytes_len);
+	buf->pixels = calloc(1, pixels_bytes_len);
 	if (!buf->pixels) {
-		die("Could not alloc buf->pixels (%d)", buf->pixels_bytes_len);
+		die("Could not alloc buf->pixels (%d)", pixels_bytes_len);
 	}
 	return buf->pixels;
 }
 
 static struct pixel_buffer *pixel_buffer_new(unsigned int window_x,
-					     unsigned int window_y)
+					     unsigned int window_y,
+					     size_t palette_len)
 {
 	size_t size = sizeof(struct pixel_buffer);
 	struct pixel_buffer *buf = calloc(1, size);
@@ -618,18 +621,17 @@ static struct pixel_buffer *pixel_buffer_new(unsigned int window_x,
 		die("could not allocate %lu bytes?", size);
 	}
 
-	buf->width = window_x;
-	buf->height = window_y;
 	buf->bytes_per_pixel = sizeof(unsigned int);
-	buf->pitch = (buf->width * buf->bytes_per_pixel);
-	buf->pixels_bytes_len =
-	    (buf->width * buf->height * buf->bytes_per_pixel);
+	pixel_buffer_resize(buf, window_y, window_x);
 
-	size = buf->pixels_bytes_len;
-	buf->pixels = calloc(1, size);
-	if (!buf->pixels) {
+	buf->palette_len = palette_len;
+	size = buf->palette_len * sizeof(struct rgb24_s);
+	buf->palette = calloc(1, size);
+	if (!buf->palette) {
 		die("could not allocate %zu bytes?", size);
 	}
+
+	bright_palette(buf->palette, palette_len);
 
 	return buf;
 }
@@ -639,6 +641,7 @@ void pixel_buffer_free(struct pixel_buffer *buf)
 	if (!buf) {
 		return;
 	}
+	free(buf->palette);
 	free(buf->pixels);
 	free(buf);
 }
@@ -956,8 +959,6 @@ int main(int argc, const char **argv)
 	int window_y = argc > 2 ? atoi(argv[2]) : (window_x * 3) / 4;
 
 	size_t palette_len = 15;
-	struct rgb24_s palette[palette_len];
-	bright_palette(palette, palette_len);
 
 	/* define the range of the X dimension */
 	long double cx_min = -2.5;
@@ -989,7 +990,8 @@ int main(int argc, const char **argv)
 		    SDL_GetError());
 	}
 
-	struct pixel_buffer *virtual_win = pixel_buffer_new(window_x, window_y);
+	struct pixel_buffer *virtual_win =
+	    pixel_buffer_new(window_x, window_y, palette_len);
 
 	struct sdl_texture_buffer texture_buf;
 	texture_buf.texture = NULL;
@@ -1000,8 +1002,7 @@ int main(int argc, const char **argv)
 				 cy_max, nf[func_idx].pfunc, nf[func_idx].name);
 
 	print_directions(title, cx_min, cx_max, cy_min, cy_max);
-	pixel_buffer_update(coord_plane, virtual_win, highlight_latest, palette,
-			    palette_len);
+	pixel_buffer_update(coord_plane, virtual_win, highlight_latest);
 
 	int x = SDL_WINDOWPOS_UNDEFINED;
 	int y = SDL_WINDOWPOS_UNDEFINED;
@@ -1095,8 +1096,7 @@ int main(int argc, const char **argv)
 		}
 
 		coordinate_plane_iterate(coord_plane, 1);
-		pixel_buffer_update(coord_plane, virtual_win, highlight_latest,
-				    palette, palette_len);
+		pixel_buffer_update(coord_plane, virtual_win, highlight_latest);
 		sdl_blit_texture(renderer, &texture_buf);
 
 		frame_count++;
