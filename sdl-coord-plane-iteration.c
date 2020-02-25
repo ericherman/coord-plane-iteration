@@ -177,6 +177,9 @@ struct coordinate_plane_s {
 	unsigned long iteration_count;
 	unsigned long escaped;
 	unsigned long not_escaped;
+	const char *function_name;
+	pfunc_f pfunc;
+
 	struct iterxy_s *points;
 	size_t len;
 };
@@ -191,7 +194,9 @@ struct coordinate_plane_s *coordinate_plane_new(unsigned screen_width,
 						long double cx_min,
 						long double cx_max,
 						long double cy_min,
-						long double cy_max)
+						long double cy_max,
+						pfunc_f pfunc,
+						const char *function_name)
 {
 	size_t size = sizeof(struct coordinate_plane_s);
 	struct coordinate_plane_s *plane = calloc(1, size);
@@ -215,6 +220,8 @@ struct coordinate_plane_s *coordinate_plane_new(unsigned screen_width,
 	plane->points = NULL;
 	plane->len = plane->screen_width * plane->screen_height;
 
+	plane->pfunc = pfunc;
+	plane->function_name = function_name;
 	plane->iteration_count = 0;
 	plane->escaped = 0;
 	plane->not_escaped = plane->len;
@@ -259,19 +266,21 @@ void coordinate_plane_free(struct coordinate_plane_s *plane)
 	free(plane);
 }
 
-void coordinate_plane_iterate(struct coordinate_plane_s *plane, pfunc_f pfunc)
+void coordinate_plane_iterate(struct coordinate_plane_s *plane, unsigned times)
 {
-	++(plane->iteration_count);
-	plane->escaped = 0;
-	plane->not_escaped = plane->len;
-	for (size_t j = 0; j < plane->len; ++j) {
-		struct iterxy_s *p = plane->points + j;
+	for (size_t i = 0; i < times; ++i) {
+		++(plane->iteration_count);
+		plane->escaped = 0;
+		plane->not_escaped = plane->len;
+		for (size_t j = 0; j < plane->len; ++j) {
+			struct iterxy_s *p = plane->points + j;
 
-		pfunc(p);
+			plane->pfunc(p);
 
-		if (p->escaped) {
-			++(plane->escaped);
-			--(plane->not_escaped);
+			if (p->escaped) {
+				++(plane->escaped);
+				--(plane->not_escaped);
+			}
 		}
 	}
 }
@@ -986,11 +995,10 @@ int main(int argc, const char **argv)
 	texture_buf.texture = NULL;
 	texture_buf.pixel_buf = virtual_win;
 
-	unsigned long escaped = 0;
-	unsigned long not_escaped = 0;
 	struct coordinate_plane_s *coord_plane =
 	    coordinate_plane_new(window_x, window_y, cx_min, cx_max, cy_min,
-				 cy_max);
+				 cy_max, nf[func_idx].pfunc, nf[func_idx].name);
+
 	print_directions(title, cx_min, cx_max, cy_min, cy_max);
 	pixel_buffer_update(coord_plane, virtual_win, highlight_latest, palette,
 			    palette_len);
@@ -1079,12 +1087,14 @@ int main(int argc, const char **argv)
 			coordinate_plane_free(coord_plane);
 			coord_plane =
 			    coordinate_plane_new(window_x, window_y, cx_min,
-						 cx_max, cy_min, cy_max);
+						 cx_max, cy_min, cy_max,
+						 nf[func_idx].pfunc,
+						 nf[func_idx].name);
 			print_directions(title, cx_min, cx_max, cy_min, cy_max);
 			event_ctx.resized = 0;
 		}
 
-		coordinate_plane_iterate(coord_plane, nf[func_idx].pfunc);
+		coordinate_plane_iterate(coord_plane, 1);
 		pixel_buffer_update(coord_plane, virtual_win, highlight_latest,
 				    palette, palette_len);
 		sdl_blit_texture(renderer, &texture_buf);
