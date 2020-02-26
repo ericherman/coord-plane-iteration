@@ -42,8 +42,6 @@ struct iterxy_s {
 	unsigned escaped;
 };
 
-typedef void (*pfunc_f)(struct iterxy_s * p);
-
 void ordinary_square(struct iterxy_s *p)
 {
 	if (p->escaped) {
@@ -164,6 +162,25 @@ void not_a_circle(struct iterxy_s *p)
 	}
 }
 
+typedef void (*pfunc_f)(struct iterxy_s * p);
+
+struct named_pfunc_s {
+	pfunc_f pfunc;
+	const char *name;
+};
+
+struct named_pfunc_s pfuncs[] = {
+	{ mandlebrot, "mandlebrot" },
+	{ ordinary_square, "ordinary_square" },
+	{ not_a_circle, "not_a_circle" },
+	{ square_binomial_collapse_y2_and_add_orig,
+	 "square_binomial_collapse_y2_and_add_orig," },
+	{ square_binomial_ignore_y2_and_add_orig,
+	 "square_binomial_ignore_y2_and_add_orig," }
+};
+
+const size_t pfuncs_len = 5;
+
 struct coordinate_plane_s {
 	unsigned screen_width;
 	unsigned screen_height;
@@ -177,8 +194,8 @@ struct coordinate_plane_s {
 	unsigned long iteration_count;
 	unsigned long escaped;
 	unsigned long not_escaped;
-	const char *function_name;
-	pfunc_f pfunc;
+
+	size_t pfuncs_idx;
 
 	struct iterxy_s *points;
 	size_t len;
@@ -189,19 +206,27 @@ static inline long double _dmax(long double a, long double b)
 	return a > b ? a : b;
 }
 
-struct coordinate_plane_s *coordinate_plane_new(unsigned screen_width,
-						unsigned screen_height,
-						long double cx_min,
-						long double cx_max,
-						long double cy_min,
-						long double cy_max,
-						pfunc_f pfunc,
-						const char *function_name)
+struct coordinate_plane_s *coordinate_plane_reset(struct coordinate_plane_s
+						  *plane, unsigned screen_width,
+						  unsigned screen_height,
+						  long double cx_min,
+						  long double cx_max,
+						  long double cy_min,
+						  long double cy_max,
+						  size_t pfuncs_idx)
 {
-	size_t size = sizeof(struct coordinate_plane_s);
-	struct coordinate_plane_s *plane = calloc(1, size);
-	if (!plane) {
-		die("could not allocate %zu bytes?", size);
+	size_t needed = screen_width * screen_height;
+	if (plane->points && (plane->len < needed)) {
+		free(plane->points);
+		plane->points = NULL;
+	}
+	if (!plane->points) {
+		plane->len = needed;
+		size_t size = plane->len * sizeof(struct iterxy_s);
+		plane->points = calloc(1, size);
+		if (!plane->points) {
+			die("could not allocate %zu bytes?", size);
+		}
 	}
 
 	plane->screen_width = screen_width;
@@ -217,20 +242,11 @@ struct coordinate_plane_s *coordinate_plane_new(unsigned screen_width,
 	long double coord_height = (plane->cy_max - plane->cy_min);
 	plane->point_height = coord_height / screen_height;
 
-	plane->points = NULL;
-	plane->len = plane->screen_width * plane->screen_height;
-
-	plane->pfunc = pfunc;
-	plane->function_name = function_name;
+	plane->pfuncs_idx = pfuncs_idx;
 	plane->iteration_count = 0;
 	plane->escaped = 0;
-	plane->not_escaped = plane->len;
+	plane->not_escaped = (plane->screen_width * plane->screen_height);
 
-	size = plane->len * sizeof(struct iterxy_s);
-	plane->points = calloc(1, size);
-	if (!plane->points) {
-		die("could not allocate %zu bytes?", size);
-	}
 	for (size_t py = 0; py < plane->screen_height; ++py) {
 		for (size_t px = 0; px < plane->screen_width; ++px) {
 			size_t i = (py * plane->screen_width) + px;
@@ -258,6 +274,26 @@ struct coordinate_plane_s *coordinate_plane_new(unsigned screen_width,
 	return plane;
 }
 
+struct coordinate_plane_s *coordinate_plane_new(unsigned screen_width,
+						unsigned screen_height,
+						long double cx_min,
+						long double cx_max,
+						long double cy_min,
+						long double cy_max,
+						size_t pfunc_idx)
+{
+	size_t size = sizeof(struct coordinate_plane_s);
+	struct coordinate_plane_s *plane = calloc(1, size);
+	if (!plane) {
+		die("could not allocate %zu bytes?", size);
+	}
+
+	coordinate_plane_reset(plane, screen_width, screen_height, cx_min,
+			       cx_max, cy_min, cy_max, pfunc_idx);
+
+	return plane;
+}
+
 void coordinate_plane_free(struct coordinate_plane_s *plane)
 {
 	if (plane) {
@@ -266,8 +302,13 @@ void coordinate_plane_free(struct coordinate_plane_s *plane)
 	free(plane);
 }
 
-void coordinate_plane_iterate(struct coordinate_plane_s *plane, unsigned times)
+size_t coordinate_plane_iterate(struct coordinate_plane_s *plane,
+				unsigned times)
 {
+	pfunc_f pfunc = pfuncs[plane->pfuncs_idx].pfunc;
+
+	size_t old_escaped = plane->escaped;
+
 	for (size_t i = 0; i < times; ++i) {
 		++(plane->iteration_count);
 		plane->escaped = 0;
@@ -275,7 +316,7 @@ void coordinate_plane_iterate(struct coordinate_plane_s *plane, unsigned times)
 		for (size_t j = 0; j < plane->len; ++j) {
 			struct iterxy_s *p = plane->points + j;
 
-			plane->pfunc(p);
+			pfunc(p);
 
 			if (p->escaped) {
 				++(plane->escaped);
@@ -283,12 +324,108 @@ void coordinate_plane_iterate(struct coordinate_plane_s *plane, unsigned times)
 			}
 		}
 	}
+
+	return plane->escaped - old_escaped;
 }
 
-struct named_pfunc_s {
-	pfunc_f pfunc;
-	const char *name;
-};
+void coordinate_plane_next_function(struct coordinate_plane_s *plane)
+{
+	size_t pfuncs_idx = 1 + plane->pfuncs_idx;
+	if (pfuncs_idx >= pfuncs_len) {
+		pfuncs_idx = 0;
+	}
+	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
+			       plane->cx_min, plane->cx_max, plane->cy_min,
+			       plane->cy_max, pfuncs_idx);
+}
+
+void coordinate_plane_zoom_in(struct coordinate_plane_s *plane)
+{
+	long double x_diff = plane->cx_max - plane->cx_min;
+	long double y_diff = plane->cy_max - plane->cy_min;
+	long double x_zoom_diff = x_diff / 8;
+	long double y_zoom_diff = y_diff / 8;
+
+	long double cx_min = plane->cx_min + x_zoom_diff;
+	long double cx_max = plane->cx_max - x_zoom_diff;
+	long double cy_min = plane->cy_min + y_zoom_diff;
+	long double cy_max = plane->cy_max - y_zoom_diff;
+
+	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
+			       cx_min, cx_max, cy_min, cy_max,
+			       plane->pfuncs_idx);
+}
+
+void coordinate_plane_zoom_out(struct coordinate_plane_s *plane)
+{
+	long double x_diff = plane->cx_max - plane->cx_min;
+	long double y_diff = plane->cy_max - plane->cy_min;
+	long double x_zoom_diff = x_diff / 8;
+	long double y_zoom_diff = y_diff / 8;
+
+	long double cx_min = plane->cx_min - x_zoom_diff;
+	long double cx_max = plane->cx_max + x_zoom_diff;
+	long double cy_min = plane->cy_min - y_zoom_diff;
+	long double cy_max = plane->cy_max + y_zoom_diff;
+
+	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
+			       cx_min, cx_max, cy_min, cy_max,
+			       plane->pfuncs_idx);
+}
+
+void coordinate_plane_pan_left(struct coordinate_plane_s *plane)
+{
+	long double x_diff = plane->cx_max - plane->cx_min;
+	long double y_diff = plane->cy_max - plane->cy_min;
+	long double x_pan_diff = x_diff / 4;
+
+	long double cx_min = plane->cx_min - x_pan_diff;
+	long double cx_max = plane->cx_max - x_pan_diff;
+
+	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
+			       cx_min, cx_max, plane->cy_min, plane->cy_max,
+			       plane->pfuncs_idx);
+}
+
+void coordinate_plane_pan_right(struct coordinate_plane_s *plane)
+{
+	long double x_diff = plane->cx_max - plane->cx_min;
+	long double y_diff = plane->cy_max - plane->cy_min;
+	long double x_pan_diff = x_diff / 4;
+
+	long double cx_min = plane->cx_min + x_pan_diff;
+	long double cx_max = plane->cx_max + x_pan_diff;
+
+	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
+			       cx_min, cx_max, plane->cy_min, plane->cy_max,
+			       plane->pfuncs_idx);
+}
+
+void coordinate_plane_pan_up(struct coordinate_plane_s *plane)
+{
+	long double y_diff = plane->cy_max - plane->cy_min;
+	long double y_pan_diff = y_diff / 4;
+
+	long double cy_max = plane->cy_max - y_pan_diff;
+	long double cy_min = plane->cy_min - y_pan_diff;
+
+	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
+			       plane->cx_min, plane->cx_max, cy_min, cy_max,
+			       plane->pfuncs_idx);
+}
+
+void coordinate_plane_pan_down(struct coordinate_plane_s *plane)
+{
+	long double y_diff = plane->cy_max - plane->cy_min;
+	long double y_pan_diff = y_diff / 4;
+
+	long double cy_max = plane->cy_max + y_pan_diff;
+	long double cy_min = plane->cy_min + y_pan_diff;
+
+	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
+			       plane->cx_min, plane->cx_max, cy_min, cy_max,
+			       plane->pfuncs_idx);
+}
 
 struct pixel_buffer {
 	unsigned int width;
@@ -503,91 +640,48 @@ void pixel_buffer_update(struct coordinate_plane_s *plane,
 	}
 }
 
-void pan_and_zoom(int press, long double *cx_min, long double *cx_max,
-		  long double *cy_min, long double *cy_max)
-{
-	long double x_diff = *cx_max - *cx_min;
-	long double y_diff = *cy_max - *cy_min;
-	long double x_pan_diff = x_diff / 4;
-	long double y_pan_diff = y_diff / 4;
-	long double x_zoom_diff = x_diff / 8;
-	long double y_zoom_diff = y_diff / 8;
-	switch (press) {
-	case 'z':
-		*cx_min = *cx_min + x_zoom_diff;
-		*cx_max = *cx_max - x_zoom_diff;
-		*cy_min = *cy_min + y_zoom_diff;
-		*cy_max = *cy_max - y_zoom_diff;
-		break;
-	case 'x':
-		*cx_min = *cx_min - x_zoom_diff;
-		*cx_max = *cx_max + x_zoom_diff;
-		*cy_min = *cy_min - y_zoom_diff;
-		*cy_max = *cy_max + y_zoom_diff;
-		break;
-	case 'w':
-		*cy_max = *cy_max - y_pan_diff;
-		*cy_min = *cy_min - y_pan_diff;
-		break;
-	case 's':
-		*cy_max = *cy_max + y_pan_diff;
-		*cy_min = *cy_min + y_pan_diff;
-		break;
-	case 'a':
-		*cx_min = *cx_min - x_pan_diff;
-		*cx_max = *cx_max - x_pan_diff;
-		break;
-	case 'd':
-		*cx_min = *cx_min + x_pan_diff;
-		*cx_max = *cx_max + x_pan_diff;
-		break;
-	default:
-		/* reset */
-		break;
-	}
-}
-
-int process_input(struct human_input *input, int *press)
+int human_input_process(struct human_input *input,
+			struct coordinate_plane_s *plane)
 {
 	if ((input->esc.is_down) || (input->q.is_down)) {
-		return 1;
+		return -1;
 	}
 
 	if (input->space.is_down) {
-		*press = ' ';
-		return 0;
+		coordinate_plane_next_function(plane);
+		return 1;
 	}
 
 	if ((input->w.is_down && !input->w.was_down) ||
 	    (input->up.is_down && !input->up.was_down)) {
-		*press = 'w';
-		return 0;
+		coordinate_plane_pan_up(plane);
+		return 1;
 	}
 	if ((input->s.is_down && !input->s.was_down) ||
 	    (input->down.is_down && !input->down.was_down)) {
-		*press = 's';
-		return 0;
+		coordinate_plane_pan_down(plane);
+		return 1;
 	}
 
 	if ((input->a.is_down && !input->a.was_down) ||
 	    (input->left.is_down && !input->left.was_down)) {
-		*press = 'a';
-		return 0;
+		coordinate_plane_pan_left(plane);
+		return 1;
 	}
 	if ((input->d.is_down && !input->d.was_down) ||
 	    (input->right.is_down && !input->right.was_down)) {
-		*press = 'd';
-		return 0;
+		coordinate_plane_pan_right(plane);
+		return 1;
 	}
 	if ((input->x.is_down && !input->x.was_down) ||
 	    (input->page_up.is_down && !input->page_up.was_down)) {
-		*press = 'x';
-		return 0;
+		coordinate_plane_zoom_out(plane);
+		return 1;
 	}
 	if ((input->z.is_down && !input->z.was_down) ||
 	    (input->page_down.is_down && !input->page_down.was_down)) {
-		*press = 'z';
-		return 0;
+		coordinate_plane_zoom_in(plane);
+		return 1;
 	}
 
 	return 0;
@@ -658,7 +752,7 @@ static void diff_timespecs(struct timespec start, struct timespec end,
 	}
 }
 
-void init_input(struct human_input *input)
+void human_input_init(struct human_input *input)
 {
 	input->up.is_down = 0;
 	input->up.was_down = 0;
@@ -706,15 +800,19 @@ void init_input(struct human_input *input)
 	input->esc.was_down = 0;
 }
 
-void print_directions(const char *title, long double cx_min, long double cx_max,
-		      long double cy_min, long double cy_max)
+void print_directions(struct coordinate_plane_s *plane)
 {
+	const char *title = pfuncs[plane->pfuncs_idx].name;
 	printf("\n\n%s\n", title);
 	printf("use arrows or 'wasd' keys to pan\n");
 	printf("use page_down/page_up or 'z' and 'x' keys to zoom in/out\n");
 	printf("space will cycle through available functions\n");
 	printf("escape or 'q' to quit\n");
+	long double cx_min = plane->cx_min;
+	long double cx_max = plane->cx_min;
 	printf("x-axis co-ordinates range from: %Lf to: %Lf\n", cx_min, cx_max);
+	long double cy_min = plane->cy_min;
+	long double cy_max = plane->cy_min;
 	printf("y-axis co-ordinates range from: %Lf to: %Lf\n", cy_min, cy_max);
 }
 
@@ -944,17 +1042,6 @@ static int sdl_process_event(struct sdl_event_context *event_ctx,
 
 int main(int argc, const char **argv)
 {
-	struct named_pfunc_s nf[] = {
-		{ mandlebrot, "mandlebrot" },
-		{ ordinary_square, "ordinary_square" },
-		{ not_a_circle, "not_a_circle" },
-		{ square_binomial_collapse_y2_and_add_orig,
-		 "square_binomial_collapse_y2_and_add_orig," },
-		{ square_binomial_ignore_y2_and_add_orig,
-		 "square_binomial_ignore_y2_and_add_orig," }
-	};
-	size_t nflen = 5;
-
 	int window_x = argc > 1 ? atoi(argv[1]) : 800;
 	int window_y = argc > 2 ? atoi(argv[2]) : (window_x * 3) / 4;
 
@@ -979,10 +1066,9 @@ int main(int argc, const char **argv)
 	if (window_x <= 0 || window_y <= 0) {
 		die("window_x = %d\nwindow_y = %d\n", window_x, window_y);
 	}
-	if (func_idx >= nflen) {
+	if (func_idx >= pfuncs_len) {
 		func_idx = 0;
 	}
-	const char *title = nf[func_idx].name;
 
 	Uint32 flags = SDL_INIT_VIDEO;
 	if (SDL_Init(flags) != 0) {
@@ -997,16 +1083,15 @@ int main(int argc, const char **argv)
 	texture_buf.texture = NULL;
 	texture_buf.pixel_buf = virtual_win;
 
-	struct coordinate_plane_s *coord_plane =
+	struct coordinate_plane_s *plane =
 	    coordinate_plane_new(window_x, window_y, cx_min, cx_max, cy_min,
-				 cy_max, nf[func_idx].pfunc, nf[func_idx].name);
-
-	print_directions(title, cx_min, cx_max, cy_min, cy_max);
-	pixel_buffer_update(coord_plane, virtual_win, highlight_latest);
+				 cy_max, func_idx);
+	print_directions(plane);
 
 	int x = SDL_WINDOWPOS_UNDEFINED;
 	int y = SDL_WINDOWPOS_UNDEFINED;
 	flags = SDL_WINDOW_RESIZABLE;
+	const char *title = pfuncs[plane->pfuncs_idx].name;
 	SDL_Window *window =
 	    SDL_CreateWindow(title, x, y, window_x, window_y, flags);
 	if (!window) {
@@ -1043,8 +1128,8 @@ int main(int argc, const char **argv)
 	unsigned long frame_count = 0;
 
 	struct human_input input[2];
-	init_input(&input[0]);
-	init_input(&input[1]);
+	human_input_init(&input[0]);
+	human_input_init(&input[1]);
 	struct human_input *tmp_input = NULL;
 	struct human_input *new_input = &input[1];
 	struct human_input *old_input = &input[0];
@@ -1054,49 +1139,42 @@ int main(int argc, const char **argv)
 		tmp_input = new_input;
 		new_input = old_input;
 		old_input = tmp_input;
-		init_input(new_input);
+		human_input_init(new_input);
 
 		while (SDL_PollEvent(&event)) {
-			if ((shutdown =
-			     sdl_process_event(&event_ctx, new_input))) {
+			shutdown = sdl_process_event(&event_ctx, new_input);
+			if (shutdown) {
 				break;
 			}
 		}
+		if (shutdown) {
+			break;
+		}
 
-		int restart = 0;
-		int press = 0;
-		if (shutdown || (shutdown = process_input(new_input, &press))) {
+		int change = human_input_process(new_input, plane);
+		if (change == -1) {
+			shutdown = 1;
 			break;
 		}
 		if (event_ctx.resized) {
-			restart = 1;
 			SDL_GetWindowSize(window, &window_x, &window_y);
-		}
-		if (press) {
-			restart = 1;
-			pan_and_zoom(press, &cx_min, &cx_max, &cy_min, &cy_max);
-			if (press == ' ') {
-				++func_idx;
-				if (func_idx >= nflen) {
-					func_idx = 0;
-				}
-				title = nf[func_idx].name;
-				SDL_SetWindowTitle(window, title);
-			}
-		}
-		if (restart) {
-			coordinate_plane_free(coord_plane);
-			coord_plane =
-			    coordinate_plane_new(window_x, window_y, cx_min,
-						 cx_max, cy_min, cy_max,
-						 nf[func_idx].pfunc,
-						 nf[func_idx].name);
-			print_directions(title, cx_min, cx_max, cy_min, cy_max);
+			coordinate_plane_reset(plane, window_x,
+					       window_y,
+					       plane->cx_min,
+					       plane->cx_max,
+					       plane->cy_min,
+					       plane->cy_max,
+					       plane->pfuncs_idx);
+			change = 1;
 			event_ctx.resized = 0;
 		}
-
-		coordinate_plane_iterate(coord_plane, 1);
-		pixel_buffer_update(coord_plane, virtual_win, highlight_latest);
+		if (change) {
+			title = pfuncs[plane->pfuncs_idx].name;
+			SDL_SetWindowTitle(window, title);
+			print_directions(plane);
+		}
+		coordinate_plane_iterate(plane, 1);
+		pixel_buffer_update(plane, virtual_win, highlight_latest);
 		sdl_blit_texture(renderer, &texture_buf);
 
 		frame_count++;
@@ -1123,9 +1201,9 @@ int main(int argc, const char **argv)
 			if (fps_printer) {
 				fprintf(stdout,
 					"iteation: %lu, escaped: %lu, not escaped: %lu fps: %.02f (avg fps: %.f)  \r",
-					coord_plane->iteration_count,
-					coord_plane->escaped,
-					coord_plane->not_escaped, fps,
+					plane->iteration_count,
+					plane->escaped,
+					plane->not_escaped, fps,
 					((double)frame_count /
 					 (double)total_elapsed_seconds));
 				fflush(stdout);
@@ -1145,7 +1223,7 @@ int main(int argc, const char **argv)
 		SDL_Quit();
 
 		/* then collect our own garbage */
-		coordinate_plane_free(coord_plane);
+		coordinate_plane_free(plane);
 		pixel_buffer_free(virtual_win);
 	}
 
