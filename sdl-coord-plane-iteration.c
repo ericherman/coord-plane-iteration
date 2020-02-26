@@ -740,8 +740,8 @@ void pixel_buffer_free(struct pixel_buffer *buf)
 	free(buf);
 }
 
-static void diff_timespecs(struct timespec start, struct timespec end,
-			   struct timespec *elapsed)
+static void diff_timespecs(struct timespec *elapsed, struct timespec start,
+			   struct timespec end)
 {
 	if ((end.tv_nsec - start.tv_nsec) < 0) {
 		elapsed->tv_sec = end.tv_sec - start.tv_sec - 1;
@@ -1116,14 +1116,9 @@ int main(int argc, const char **argv)
 	event_ctx.win_id = SDL_GetWindowID(window);
 	event_ctx.resized = 0;
 
-	struct timespec start;
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-
 	struct timespec last_print;
-	last_print.tv_sec = start.tv_sec;
-	last_print.tv_nsec = start.tv_nsec;
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &last_print);
 
-	unsigned long total_elapsed_seconds = 0;
 	unsigned long frames_since_print = 0;
 	unsigned long frame_count = 0;
 
@@ -1185,7 +1180,7 @@ int main(int argc, const char **argv)
 		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &now);
 
 		struct timespec elapsed;
-		diff_timespecs(last_print, now, &elapsed);
+		diff_timespecs(&elapsed, last_print, now);
 
 		if (((elapsed.tv_sec * 1000000000) + elapsed.tv_nsec) >
 		    100000000) {
@@ -1196,11 +1191,6 @@ int main(int argc, const char **argv)
 			frames_since_print = 0;
 			last_print.tv_sec = now.tv_sec;
 			last_print.tv_nsec = now.tv_nsec;
-			diff_timespecs(start, now, &elapsed);
-			total_elapsed_seconds = elapsed.tv_sec + 1;
-			double avg_fps =
-			    ((double)frame_count /
-			     (double)total_elapsed_seconds);
 			if (fps > 50.0) {
 				++iterations_per_loop;
 			} else if (fps < 40.0 && iterations_per_loop > 1) {
@@ -1211,9 +1201,9 @@ int main(int argc, const char **argv)
 				fprintf(stdout,
 					"%lu, "
 					"escaped: %lu, not escaped: %lu "
-					"fps: %.02f (fps: %.f ipl: %u)  \r",
+					"(fps: %.f ipl: %u)  \r",
 					plane->iteration_count, plane->escaped,
-					plane->not_escaped, fps, avg_fps,
+					plane->not_escaped, fps,
 					iterations_per_loop);
 				fflush(stdout);
 			}
