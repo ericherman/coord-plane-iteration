@@ -696,11 +696,11 @@ static void *pixel_buffer_resize(struct pixel_buffer *buf, int height,
 	buf->width = width;
 	buf->height = height;
 	buf->pixels_len = buf->height * buf->width;
-	size_t pixels_bytes_len = buf->pixels_len * buf->bytes_per_pixel;
 	buf->pitch = buf->width * buf->bytes_per_pixel;
-	buf->pixels = calloc(1, pixels_bytes_len);
+	size_t size = buf->pixels_len * buf->bytes_per_pixel;
+	buf->pixels = calloc(1, size);
 	if (!buf->pixels) {
-		die("Could not alloc buf->pixels (%d)", pixels_bytes_len);
+		die("Could not alloc buf->pixels (%d)", size);
 	}
 	return buf->pixels;
 }
