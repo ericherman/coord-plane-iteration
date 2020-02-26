@@ -1135,6 +1135,7 @@ int main(int argc, const char **argv)
 	struct human_input *old_input = &input[0];
 
 	int shutdown = 0;
+	int iterations_per_loop = 1;
 	while (!shutdown) {
 		tmp_input = new_input;
 		new_input = old_input;
@@ -1173,7 +1174,7 @@ int main(int argc, const char **argv)
 			SDL_SetWindowTitle(window, title);
 			print_directions(plane);
 		}
-		coordinate_plane_iterate(plane, 1);
+		coordinate_plane_iterate(plane, iterations_per_loop);
 		pixel_buffer_update(plane, virtual_win, highlight_latest);
 		sdl_blit_texture(renderer, &texture_buf);
 
@@ -1197,15 +1198,23 @@ int main(int argc, const char **argv)
 			last_print.tv_nsec = now.tv_nsec;
 			diff_timespecs(start, now, &elapsed);
 			total_elapsed_seconds = elapsed.tv_sec + 1;
+			double avg_fps =
+			    ((double)frame_count /
+			     (double)total_elapsed_seconds);
+			if (fps > 50.0) {
+				++iterations_per_loop;
+			} else if (fps < 40.0 && iterations_per_loop > 1) {
+				--iterations_per_loop;
+			}
 			int fps_printer = 1;	// make configurable?
 			if (fps_printer) {
 				fprintf(stdout,
-					"iteation: %lu, escaped: %lu, not escaped: %lu fps: %.02f (avg fps: %.f)  \r",
-					plane->iteration_count,
-					plane->escaped,
-					plane->not_escaped, fps,
-					((double)frame_count /
-					 (double)total_elapsed_seconds));
+					"%lu, "
+					"escaped: %lu, not escaped: %lu "
+					"fps: %.02f (fps: %.f ipl: %u)  \r",
+					plane->iteration_count, plane->escaped,
+					plane->not_escaped, fps, avg_fps,
+					iterations_per_loop);
 				fflush(stdout);
 			}
 		}
