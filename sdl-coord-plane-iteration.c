@@ -809,10 +809,10 @@ void print_directions(struct coordinate_plane_s *plane)
 	printf("space will cycle through available functions\n");
 	printf("escape or 'q' to quit\n");
 	long double cx_min = plane->cx_min;
-	long double cx_max = plane->cx_min;
+	long double cx_max = plane->cx_max;
 	printf("x-axis co-ordinates range from: %Lf to: %Lf\n", cx_min, cx_max);
 	long double cy_min = plane->cy_min;
-	long double cy_max = plane->cy_min;
+	long double cy_max = plane->cy_max;
 	printf("y-axis co-ordinates range from: %Lf to: %Lf\n", cy_min, cy_max);
 }
 
