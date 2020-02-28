@@ -345,7 +345,7 @@ struct coordinate_plane_s *coordinate_plane_reset(struct coordinate_plane_s
 	plane->center = center;
 	plane->resolution = resolution;
 	if (!(plane->resolution > 0.0)) {
-		die("invalid resolution %g", resolution);
+		die("invalid resolution %Lg", resolution);
 	}
 	plane->iteration_count = 0;
 	plane->escaped = 0;
@@ -699,7 +699,7 @@ static void *pixel_buffer_resize(struct pixel_buffer *buf, int height,
 	size_t size = buf->pixels_len * buf->bytes_per_pixel;
 	buf->pixels = calloc(1, size);
 	if (!buf->pixels) {
-		die("Could not alloc buf->pixels (%d)", size);
+		die("Could not alloc buf->pixels (%zu)", size);
 	}
 	return buf->pixels;
 }
