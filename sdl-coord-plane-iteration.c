@@ -6,7 +6,7 @@
    cc -g -O2 `sdl2-config --cflags` \
       ./sdl-coord-plane-iteration.c \
       -o ./sdl-coord-plane-iteration \
-      `sdl2-config --libs` -lm &&
+      `sdl2-config --libs` -lm -lpthread &&
    ./sdl-coord-plane-iteration
 */
 
@@ -15,6 +15,10 @@
 #include <stdlib.h>
 #include <time.h>
 #include <SDL.h>
+
+#ifndef SKIP_THREADS
+#include <threads.h>
+#endif
 
 #ifndef Make_valgrind_happy
 #define Make_valgrind_happy 0
@@ -120,6 +124,15 @@ int rgb_from_hsv(struct rgb_s *rgb, struct hsv_s hsv)
 	}
 
 	return 0;
+}
+
+static inline void *alloc_or_die(size_t size)
+{
+	void *ptr = calloc(1, size);
+	if (!ptr) {
+		die("could not allocate %zu bytes?", size);
+	}
+	return ptr;
 }
 
 enum coord_plane_escape {
@@ -312,6 +325,8 @@ struct coordinate_plane_s {
 	unsigned long not_escaped;
 	unsigned skip_rounds;
 
+	size_t num_threads;
+
 	size_t pfuncs_idx;
 
 	struct iterxy_s *points;
@@ -378,10 +393,7 @@ struct coordinate_plane_s *coordinate_plane_reset(struct coordinate_plane_s
 	if (!plane->points) {
 		plane->len = needed;
 		size_t size = plane->len * sizeof(struct iterxy_s);
-		plane->points = calloc(1, size);
-		if (!plane->points) {
-			die("could not allocate %zu bytes?", size);
-		}
+		plane->points = alloc_or_die(size);
 	}
 
 	long double x_min = coordinate_plane_x_min(plane);
@@ -424,10 +436,8 @@ struct coordinate_plane_s *coordinate_plane_new(unsigned screen_width,
 						unsigned skip_rounds)
 {
 	size_t size = sizeof(struct coordinate_plane_s);
-	struct coordinate_plane_s *plane = calloc(1, size);
-	if (!plane) {
-		die("could not allocate %zu bytes?", size);
-	}
+	struct coordinate_plane_s *plane = alloc_or_die(size);
+	plane->num_threads = 1;
 	plane->skip_rounds = skip_rounds;
 
 	coordinate_plane_reset(plane, screen_width, screen_height, center,
@@ -465,40 +475,175 @@ void color_from_escape(struct rgb24_s *result, unsigned iteration_count)
 	rgb24_from_rgb(result, rgb);
 }
 
-size_t coordinate_plane_iterate(struct coordinate_plane_s *plane)
+struct coordinate_plane_iterate_context {
+	struct coordinate_plane_s *plane;
+	struct rgb24_s escape_color;
+	size_t offset;
+	size_t step_size;
+};
+
+int coordinate_plane_iterate_context(struct coordinate_plane_iterate_context
+				     *ctx)
 {
+	struct coordinate_plane_s *plane = ctx->plane;
+
 	pfunc_f pfunc = pfuncs[plane->pfuncs_idx].pfunc;
 
-	size_t old_escaped = plane->escaped;
+	int local_escaped = 0;
+	for (size_t j = ctx->offset; j < plane->len; j += ctx->step_size) {
+		struct iterxy_s *p = plane->points + j;
 
-	++(plane->iteration_count);
-	struct rgb24_s escape_color = { 0, 0, 0 };
+		if (pfunc(p) == coord_plane_escape_now) {
+			p->color = ctx->escape_color;
+		}
+
+		if (p->escaped) {
+			++local_escaped;
+		}
+	}
+
+	return local_escaped;
+}
+
+int coordinate_plane_iterate_inner(void *void_context)
+{
+	struct coordinate_plane_iterate_context *context = NULL;
+	context = (struct coordinate_plane_iterate_context *)void_context;
+	return coordinate_plane_iterate_context(context);
+}
+
+void rgb24_color_from_escape_inner(struct coordinate_plane_s *plane,
+				   struct rgb24_s *escape_color)
+{
+	escape_color->red = 0;
+	escape_color->green = 0;
+	escape_color->blue = 0;
+
 	if (plane->iteration_count > plane->skip_rounds) {
-		color_from_escape(&escape_color, plane->iteration_count);
+		color_from_escape(escape_color, plane->iteration_count);
 	}
 #if DEBUG
 	if (plane->iteration_count <= 10 || (plane->iteration_count % 100 == 0)) {
 		fprintf(stdout, "\ncolor = { 0x%02x, 0x%02x, 0x%02x }\n",
-			(unsigned int)escape_color.red,
-			(unsigned int)escape_color.green,
-			(unsigned int)escape_color.blue);
+			(unsigned int)escape_color->red,
+			(unsigned int)escape_color->green,
+			(unsigned int)escape_color->blue);
 	}
 #endif
-	plane->escaped = 0;
-	plane->not_escaped = plane->len;
-	for (size_t j = 0; j < plane->len; ++j) {
-		struct iterxy_s *p = plane->points + j;
+}
 
-		if (pfunc(p) == coord_plane_escape_now) {
-			p->color = escape_color;
-		}
+void coordinate_plane_iterate_single_threaded(struct coordinate_plane_s *plane)
+{
+	struct rgb24_s escape_color;
+	rgb24_color_from_escape_inner(plane, &escape_color);
+	struct coordinate_plane_iterate_context context;
+	context.plane = plane;
+	context.escape_color = escape_color;
+	context.offset = 0;
+	context.step_size = 1;
 
-		if (p->escaped) {
-			++(plane->escaped);
-			--(plane->not_escaped);
+	int result = coordinate_plane_iterate_context(&context);
+
+	size_t local_escaped = (size_t)result;
+	plane->not_escaped -= local_escaped;
+	plane->escaped += local_escaped;
+}
+
+#ifndef SKIP_THREADS
+
+// we don't really need this boiler-plate to be this verbose
+static void die_on_thread_create_failure(int error, size_t our_id)
+{
+	switch (error) {
+	case thrd_success:
+		break;
+	case thrd_nomem:
+		fprintf(stderr, "thrd_create %zu returned thrd_nomem\n",
+			our_id);
+		exit(EXIT_FAILURE);
+		break;
+	case thrd_error:
+		fprintf(stderr, "thrd_create %zu returned thrd_error\n",
+			our_id);
+		exit(EXIT_FAILURE);
+		break;
+	case thrd_timedout:
+		fprintf(stderr,
+			"thrd_create %zu returned unexpected thrd_timedout\n",
+			our_id);
+		exit(EXIT_FAILURE);
+		break;
+	case thrd_busy:
+		fprintf(stderr,
+			"thrd_create %zu returned unexpected thrd_busy\n",
+			our_id);
+		exit(EXIT_FAILURE);
+		break;
+	default:
+		fprintf(stderr,
+			"thrd_create %zu returned unexpected value %d\n",
+			our_id, error);
+		exit(EXIT_FAILURE);
+		break;
+	}
+}
+
+void coordinate_plane_iterate_multi_threaded(struct coordinate_plane_s *plane)
+{
+	size_t num_threads = plane->num_threads;
+	if (num_threads < 2) {
+		coordinate_plane_iterate_single_threaded(plane);
+	}
+	size_t size = sizeof(thrd_t) * num_threads;
+	thrd_t *thread_ids = alloc_or_die(size);
+	size = sizeof(struct coordinate_plane_iterate_context) * num_threads;
+	struct coordinate_plane_iterate_context *contexts = alloc_or_die(size);
+
+	struct rgb24_s escape_color;
+	rgb24_color_from_escape_inner(plane, &escape_color);
+
+	for (size_t i = 0; i < num_threads; ++i) {
+		contexts[i].plane = plane;
+		contexts[i].escape_color = escape_color;
+		contexts[i].offset = i;
+		contexts[i].step_size = num_threads;
+	}
+
+	for (size_t i = 0; i < num_threads; ++i) {
+		void *context = &(contexts[i]);
+		thrd_start_t thread_func = &coordinate_plane_iterate_inner;
+		thrd_t *thread_id = &(thread_ids[i]);
+
+		int error = thrd_create(thread_id, thread_func, context);
+		if (error) {
+			die_on_thread_create_failure(error, i);
 		}
 	}
 
+	for (size_t i = 0; i < num_threads; ++i) {
+		int result = 0;
+		thrd_join(thread_ids[i], &result);
+		size_t local_escaped = (size_t)result;
+		plane->not_escaped -= local_escaped;
+		plane->escaped += local_escaped;
+	}
+}
+
+#endif /* #ifndef SKIP_THREADS */
+
+size_t coordinate_plane_iterate(struct coordinate_plane_s *plane)
+{
+	size_t old_escaped = plane->escaped;
+
+	++(plane->iteration_count);
+	plane->escaped = 0;
+	plane->not_escaped = plane->len;
+
+#ifndef SKIP_THREADS
+	coordinate_plane_iterate_multi_threaded(plane);
+#else
+	coordinate_plane_iterate_single_threaded(plane);
+#endif /* #ifndef SKIP_THREADS */
 	return plane->escaped - old_escaped;
 }
 
@@ -624,6 +769,8 @@ struct human_input {
 	struct keyboard_key page_down;
 	struct keyboard_key x;
 
+	struct keyboard_key m;
+	struct keyboard_key n;
 	struct keyboard_key q;
 	struct keyboard_key space;
 	struct keyboard_key esc;
@@ -667,6 +814,17 @@ enum coordinate_plane_change human_input_process(struct human_input *input, stru
 	if (input->space.is_down) {
 		coordinate_plane_next_function(plane);
 		return coordinate_plane_change_yes;
+	}
+
+	if (input->m.is_down && !input->m.was_down) {
+		++plane->num_threads;
+		return coordinate_plane_change_no;
+	}
+	if (input->n.is_down && !input->n.was_down) {
+		if (plane->num_threads > 1) {
+			--plane->num_threads;
+		}
+		return coordinate_plane_change_no;
 	}
 
 	if ((input->w.is_down && !input->w.was_down) ||
@@ -715,10 +873,7 @@ static void *pixel_buffer_resize(struct pixel_buffer *buf, int height,
 	buf->pixels_len = buf->height * buf->width;
 	buf->pitch = buf->width * buf->bytes_per_pixel;
 	size_t size = buf->pixels_len * buf->bytes_per_pixel;
-	buf->pixels = calloc(1, size);
-	if (!buf->pixels) {
-		die("Could not alloc buf->pixels (%zu)", size);
-	}
+	buf->pixels = alloc_or_die(size);
 	return buf->pixels;
 }
 
@@ -726,10 +881,7 @@ static struct pixel_buffer *pixel_buffer_new(unsigned int window_x,
 					     unsigned int window_y)
 {
 	size_t size = sizeof(struct pixel_buffer);
-	struct pixel_buffer *buf = calloc(1, size);
-	if (!buf) {
-		die("could not allocate %lu bytes?", size);
-	}
+	struct pixel_buffer *buf = alloc_or_die(size);
 
 	buf->bytes_per_pixel = sizeof(unsigned int);
 	pixel_buffer_resize(buf, window_y, window_x);
@@ -796,6 +948,12 @@ void human_input_init(struct human_input *input)
 
 	input->x.is_down = 0;
 	input->x.was_down = 0;
+
+	input->m.is_down = 0;
+	input->m.was_down = 0;
+
+	input->n.is_down = 0;
+	input->n.was_down = 0;
 
 	input->q.is_down = 0;
 	input->q.was_down = 0;
@@ -940,6 +1098,14 @@ static void sdl_process_key_event(struct sdl_event_context *event_ctx,
 	case SDL_SCANCODE_D:
 		input->d.is_down = is_down;
 		input->d.was_down = was_down;
+		break;
+	case SDL_SCANCODE_M:
+		input->m.is_down = is_down;
+		input->m.was_down = was_down;
+		break;
+	case SDL_SCANCODE_N:
+		input->n.is_down = is_down;
+		input->n.was_down = was_down;
 		break;
 	case SDL_SCANCODE_Q:
 		input->q.is_down = is_down;
@@ -1127,7 +1293,7 @@ int main(int argc, const char **argv)
 	event_ctx.win_id = SDL_GetWindowID(window);
 	event_ctx.resized = 0;
 
-	double last_print = clock_seconds_as_double();
+	double last_print = clock_seconds_as_double() - 1.0;
 	unsigned long frames_since_print = 0;
 	unsigned long frame_count = 0;
 
@@ -1203,11 +1369,13 @@ int main(int argc, const char **argv)
 			int fps_printer = 1;	// make configurable?
 			if (fps_printer) {
 				fprintf(stdout,
-					"%lu, "
+					"threads: %lu, iteration: %lu, "
 					"escaped: %lu, not escaped: %lu "
-					"(fps: %.f ipf: %u)  \r",
+					"(ips: %.f fps: %.f ipf: %u)  \r",
+					plane->num_threads,
 					plane->iteration_count, plane->escaped,
-					plane->not_escaped, fps,
+					plane->not_escaped,
+					fps * iterations_per_frame, fps,
 					iterations_per_frame);
 				fflush(stdout);
 			}

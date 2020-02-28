@@ -1,7 +1,7 @@
 default: sdl-coord-plane-iteration
 
 CFLAGS=-g -O2 `sdl2-config --cflags` -Wextra -Wall -Wpedantic
-LD_ADD=`sdl2-config --libs` -lm
+LD_ADD=`sdl2-config --libs` -lm -lpthread
 
 # extracted from https://github.com/torvalds/linux/blob/master/scripts/Lindent
 LINDENT=indent -npro -kr -i8 -ts8 -sob -l80 -ss -ncs -cp1 -il0
