@@ -871,12 +871,15 @@ static void sdl_resize_texture_buf(SDL_Window *window,
 }
 
 static void sdl_blit_bytes(SDL_Renderer *renderer, SDL_Texture *texture,
-			   const SDL_Rect * rect, const void *pixels, int pitch)
+			   const void *pixels, int pitch)
 {
+	const SDL_Rect *rect = NULL;
 	if (SDL_UpdateTexture(texture, rect, pixels, pitch)) {
 		die("Could not SDL_UpdateTexture (%s)", SDL_GetError());
 	}
-	SDL_RenderCopy(renderer, texture, 0, 0);
+	const SDL_Rect *srcrect = NULL;
+	const SDL_Rect *dstrect = NULL;
+	SDL_RenderCopy(renderer, texture, srcrect, dstrect);
 	SDL_RenderPresent(renderer);
 }
 
@@ -884,11 +887,10 @@ static void sdl_blit_texture(SDL_Renderer *renderer,
 			     struct sdl_texture_buffer *texture_buf)
 {
 	SDL_Texture *texture = texture_buf->texture;
-	const SDL_Rect *rect = 0;
 	const void *pixels = texture_buf->pixel_buf->pixels;
 	int pitch = texture_buf->pixel_buf->pitch;
 
-	sdl_blit_bytes(renderer, texture, rect, pixels, pitch);
+	sdl_blit_bytes(renderer, texture, pixels, pitch);
 }
 
 static void sdl_process_key_event(struct sdl_event_context *event_ctx,
@@ -1086,9 +1088,9 @@ int main(int argc, const char **argv)
 
 	// SDL_STUFF
 
-	Uint32 flags = SDL_INIT_VIDEO;
-	if (SDL_Init(flags) != 0) {
-		die("Could not SDL_Init(%lu) (%s)", (unsigned long)flags,
+	Uint32 init_flags = SDL_INIT_VIDEO;
+	if (SDL_Init(init_flags) != 0) {
+		die("Could not SDL_Init(%lu) (%s)", (unsigned long)init_flags,
 		    SDL_GetError());
 	}
 
@@ -1103,17 +1105,18 @@ int main(int argc, const char **argv)
 
 	int x = SDL_WINDOWPOS_UNDEFINED;
 	int y = SDL_WINDOWPOS_UNDEFINED;
-	flags = SDL_WINDOW_RESIZABLE;
+	Uint32 win_flags = SDL_WINDOW_RESIZABLE;
 	const char *title = pfuncs[plane->pfuncs_idx].name;
 	SDL_Window *window =
-	    SDL_CreateWindow(title, x, y, window_x, window_y, flags);
+	    SDL_CreateWindow(title, x, y, window_x, window_y, win_flags);
 	if (!window) {
 		die("Could not SDL_CreateWindow (%s)", SDL_GetError());
 	}
 
-	const int first = -1;
-	const int none = 0;
-	SDL_Renderer *renderer = SDL_CreateRenderer(window, first, none);
+	const int renderer_idx = -1;	// first renderer
+	Uint32 rend_flags = 0;
+	SDL_Renderer *renderer =
+	    SDL_CreateRenderer(window, renderer_idx, rend_flags);
 	if (!renderer) {
 		die("Could not SDL_CreateRenderer (%s)", SDL_GetError());
 	}
