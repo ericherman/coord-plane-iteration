@@ -21,6 +21,7 @@ tidy:
 		-T SDL_Window \
 		-T SDL_Renderer \
 		-T SDL_Event \
+		-T iterxy_s \
 		sdl-coord-plane-iteration.c
 
 

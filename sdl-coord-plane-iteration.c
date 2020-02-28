@@ -28,11 +28,6 @@
 		exit(EXIT_FAILURE); \
 	} while (0)
 
-struct xy_s {
-	long double x;
-	long double y;
-};
-
 struct rgb24_s {
 	unsigned char red;
 	unsigned char green;
@@ -127,6 +122,17 @@ int rgb_from_hsv(struct rgb_s *rgb, struct hsv_s hsv)
 	return 0;
 }
 
+enum coord_plane_escape {
+	coord_plane_escape_no = 0,
+	coord_plane_escape_now = 1,
+	coord_plane_escape_before = 2
+};
+
+struct xy_s {
+	long double x;
+	long double y;
+};
+
 struct iterxy_s {
 	/* coordinate location */
 	struct xy_s c;
@@ -141,32 +147,35 @@ struct iterxy_s {
 	struct rgb24_s color;
 };
 
-void ordinary_square(struct iterxy_s *p)
+enum coord_plane_escape ordinary_square(struct iterxy_s *p)
 {
 	if (p->escaped) {
-		return;
+		return coord_plane_escape_before;
 	}
 	struct xy_s z = p->z;
 	long double escape_radius_squared = (2 * 2);
 	if (((z.y * z.y) + (z.x * z.x)) > escape_radius_squared) {
 		p->escaped = p->iterations;
+		return coord_plane_escape_now;
 	} else {
 		p->z.y = (z.y == 0) ? p->c.y : (z.y * z.y);
 		p->z.x = (z.x == 0) ? p->c.x : (z.x * z.x);
 		++(p->iterations);
 	}
+	return coord_plane_escape_no;
 }
 
 /* Z[n+1] = (Z[n])^2 + Orig */
-void mandlebrot(struct iterxy_s *p)
+enum coord_plane_escape mandlebrot(struct iterxy_s *p)
 {
 	if (p->escaped) {
-		return;
+		return coord_plane_escape_before;
 	}
 	struct xy_s z = p->z;
 	long double escape_radius_squared = (2 * 2);
 	if (((z.y * z.y) + (z.x * z.x)) > escape_radius_squared) {
 		p->escaped = p->iterations;
+		return coord_plane_escape_now;
 	} else {
 		/* first, square the complex */
 		/* the y is understood to contain an i, the sqrt(-1) */
@@ -185,17 +194,20 @@ void mandlebrot(struct iterxy_s *p)
 
 		++(p->iterations);
 	}
+	return coord_plane_escape_no;
 }
 
 /* Z[n+1] = collapse_to_y2_to_y((Z[n])^2) + Orig */
-void square_binomial_collapse_y2_and_add_orig(struct iterxy_s *p)
+enum coord_plane_escape square_binomial_collapse_y2_and_add_orig(struct iterxy_s
+								 *p)
 {
 	if (p->escaped) {
-		return;
+		return coord_plane_escape_before;
 	}
 	long double escape_radius_squared = (2 * 2);
 	if (((p->z.y * p->z.y) + (p->z.x * p->z.x)) > escape_radius_squared) {
 		p->escaped = p->iterations;
+		return coord_plane_escape_now;
 	} else {
 		/* z[n+1] = z[n]^2 + B */
 
@@ -212,17 +224,20 @@ void square_binomial_collapse_y2_and_add_orig(struct iterxy_s *p)
 		p->z.y = collapse_y_and_y2_terms + p->c.y;
 		++(p->iterations);
 	}
+	return coord_plane_escape_no;
 }
 
 /* Z[n+1] = ignore_y2((Z[n])^2) + Orig */
-void square_binomial_ignore_y2_and_add_orig(struct iterxy_s *p)
+enum coord_plane_escape square_binomial_ignore_y2_and_add_orig(struct iterxy_s
+							       *p)
 {
 	if (p->escaped) {
-		return;
+		return coord_plane_escape_before;
 	}
 	long double escape_radius_squared = (2 * 2);
 	if (((p->z.y * p->z.y) + (p->z.x * p->z.x)) > escape_radius_squared) {
 		p->escaped = p->iterations;
+		return coord_plane_escape_now;
 	} else {
 		/* z[n+1] = z[n]^2 + B */
 
@@ -239,16 +254,18 @@ void square_binomial_ignore_y2_and_add_orig(struct iterxy_s *p)
 		p->z.y = xy + yx + p->c.y;
 		++(p->iterations);
 	}
+	return coord_plane_escape_no;
 }
 
-void not_a_circle(struct iterxy_s *p)
+enum coord_plane_escape not_a_circle(struct iterxy_s *p)
 {
 	if (p->escaped) {
-		return;
+		return coord_plane_escape_before;
 	}
 	long double escape_radius_squared = (2 * 2);
 	if (((p->z.y * p->z.y) + (p->z.x * p->z.x)) > escape_radius_squared) {
 		p->escaped = p->iterations;
+		return coord_plane_escape_now;
 	} else {
 		if (p->iterations == 0) {
 			p->z.y = p->c.y;
@@ -261,9 +278,10 @@ void not_a_circle(struct iterxy_s *p)
 		}
 		++(p->iterations);
 	}
+	return coord_plane_escape_no;
 }
 
-typedef void (*pfunc_f)(struct iterxy_s * p);
+typedef enum coord_plane_escape (*pfunc_f) (struct iterxy_s *p);
 
 struct named_pfunc_s {
 	pfunc_f pfunc;
@@ -447,43 +465,37 @@ void color_from_escape(struct rgb24_s *result, unsigned iteration_count)
 	rgb24_from_rgb(result, rgb);
 }
 
-size_t coordinate_plane_iterate(struct coordinate_plane_s *plane,
-				unsigned times)
+size_t coordinate_plane_iterate(struct coordinate_plane_s *plane)
 {
 	pfunc_f pfunc = pfuncs[plane->pfuncs_idx].pfunc;
 
 	size_t old_escaped = plane->escaped;
 
-	for (size_t i = 0; i < times; ++i) {
-		++(plane->iteration_count);
-		struct rgb24_s escape_color = { 0, 0, 0 };
-		if (plane->iteration_count > plane->skip_rounds) {
-			color_from_escape(&escape_color,
-					  plane->iteration_count);
-		}
+	++(plane->iteration_count);
+	struct rgb24_s escape_color = { 0, 0, 0 };
+	if (plane->iteration_count > plane->skip_rounds) {
+		color_from_escape(&escape_color, plane->iteration_count);
+	}
 #if DEBUG
-		if (plane->iteration_count <= 10
-		    || (plane->iteration_count % 100 == 0)) {
-			fprintf(stdout,
-				"\ncolor = { 0x%02x, 0x%02x, 0x%02x }\n",
-				(int)escape_color.red, escape_color.green,
-				escape_color.blue);
-		}
+	if (plane->iteration_count <= 10 || (plane->iteration_count % 100 == 0)) {
+		fprintf(stdout, "\ncolor = { 0x%02x, 0x%02x, 0x%02x }\n",
+			(unsigned int)escape_color.red,
+			(unsigned int)escape_color.green,
+			(unsigned int)escape_color.blue);
+	}
 #endif
-		plane->escaped = 0;
-		plane->not_escaped = plane->len;
-		for (size_t j = 0; j < plane->len; ++j) {
-			struct iterxy_s *p = plane->points + j;
-			int old_escape = p->escaped;
-			pfunc(p);
-			if (!old_escape && p->escaped) {
-				p->color = escape_color;
-			}
+	plane->escaped = 0;
+	plane->not_escaped = plane->len;
+	for (size_t j = 0; j < plane->len; ++j) {
+		struct iterxy_s *p = plane->points + j;
 
-			if (p->escaped) {
-				++(plane->escaped);
-				--(plane->not_escaped);
-			}
+		if (pfunc(p) == coord_plane_escape_now) {
+			p->color = escape_color;
+		}
+
+		if (p->escaped) {
+			++(plane->escaped);
+			--(plane->not_escaped);
 		}
 	}
 
@@ -639,51 +651,57 @@ void pixel_buffer_update(struct coordinate_plane_s *plane,
 	}
 }
 
-int human_input_process(struct human_input *input,
-			struct coordinate_plane_s *plane)
+enum coordinate_plane_change {
+	coordinate_plane_change_shutdown = -1,
+	coordinate_plane_change_no = 0,
+	coordinate_plane_change_yes = 1,
+};
+
+enum coordinate_plane_change human_input_process(struct human_input *input, struct coordinate_plane_s
+						 *plane)
 {
 	if ((input->esc.is_down) || (input->q.is_down)) {
-		return -1;
+		return coordinate_plane_change_shutdown;
 	}
 
 	if (input->space.is_down) {
 		coordinate_plane_next_function(plane);
-		return 1;
+		return coordinate_plane_change_yes;
 	}
 
 	if ((input->w.is_down && !input->w.was_down) ||
 	    (input->up.is_down && !input->up.was_down)) {
 		coordinate_plane_pan_up(plane);
-		return 1;
+		return coordinate_plane_change_yes;
 	}
 	if ((input->s.is_down && !input->s.was_down) ||
 	    (input->down.is_down && !input->down.was_down)) {
 		coordinate_plane_pan_down(plane);
-		return 1;
+		return coordinate_plane_change_yes;
 	}
 
 	if ((input->a.is_down && !input->a.was_down) ||
 	    (input->left.is_down && !input->left.was_down)) {
 		coordinate_plane_pan_left(plane);
-		return 1;
+		return coordinate_plane_change_yes;
 	}
 	if ((input->d.is_down && !input->d.was_down) ||
 	    (input->right.is_down && !input->right.was_down)) {
 		coordinate_plane_pan_right(plane);
-		return 1;
+		return coordinate_plane_change_yes;
 	}
 	if ((input->x.is_down && !input->x.was_down) ||
 	    (input->page_up.is_down && !input->page_up.was_down)) {
 		coordinate_plane_zoom_out(plane);
-		return 1;
+		return coordinate_plane_change_yes;
 	}
 	if ((input->z.is_down && !input->z.was_down) ||
 	    (input->page_down.is_down && !input->page_down.was_down)) {
 		coordinate_plane_zoom_in(plane);
-		return 1;
+		return coordinate_plane_change_yes;
 	}
 
-	return 0;
+	return coordinate_plane_change_no;
 }
 
 static void *pixel_buffer_resize(struct pixel_buffer *buf, int height,
@@ -728,16 +746,17 @@ void pixel_buffer_free(struct pixel_buffer *buf)
 	free(buf);
 }
 
-static void diff_timespecs(struct timespec *elapsed, struct timespec start,
-			   struct timespec end)
+static inline double timespec_to_double(struct timespec time)
 {
-	if ((end.tv_nsec - start.tv_nsec) < 0) {
-		elapsed->tv_sec = end.tv_sec - start.tv_sec - 1;
-		elapsed->tv_nsec = 1000000000 + end.tv_nsec - start.tv_nsec;
-	} else {
-		elapsed->tv_sec = end.tv_sec - start.tv_sec;
-		elapsed->tv_nsec = end.tv_nsec - start.tv_nsec;
-	}
+	double nano_fraction = 1.0e-9;
+	return time.tv_sec + (nano_fraction * time.tv_nsec);
+}
+
+static inline double clock_seconds_as_double(void)
+{
+	struct timespec now;
+	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &now);
+	return timespec_to_double(now);
 }
 
 void human_input_init(struct human_input *input)
@@ -1108,9 +1127,7 @@ int main(int argc, const char **argv)
 	event_ctx.win_id = SDL_GetWindowID(window);
 	event_ctx.resized = 0;
 
-	struct timespec last_print;
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &last_print);
-
+	double last_print = clock_seconds_as_double();
 	unsigned long frames_since_print = 0;
 	unsigned long frame_count = 0;
 
@@ -1122,7 +1139,6 @@ int main(int argc, const char **argv)
 	struct human_input *old_input = &input[0];
 
 	int shutdown = 0;
-	int iterations_per_loop = 1;
 	while (!shutdown) {
 		tmp_input = new_input;
 		new_input = old_input;
@@ -1139,8 +1155,9 @@ int main(int argc, const char **argv)
 			break;
 		}
 
-		int change = human_input_process(new_input, plane);
-		if (change == -1) {
+		enum coordinate_plane_change change =
+		    human_input_process(new_input, plane);
+		if (change == coordinate_plane_change_shutdown) {
 			shutdown = 1;
 			break;
 		}
@@ -1154,50 +1171,44 @@ int main(int argc, const char **argv)
 					       plane->center,
 					       plane->resolution,
 					       plane->pfuncs_idx);
-			change = 1;
+			change = coordinate_plane_change_yes;
 			event_ctx.resized = 0;
 		}
-		if (change) {
+		if (change == coordinate_plane_change_yes) {
 			title = pfuncs[plane->pfuncs_idx].name;
 			SDL_SetWindowTitle(window, title);
 			print_directions(plane);
 		}
-		coordinate_plane_iterate(plane, iterations_per_loop);
+
+		double min_fps = 1.0 / 45.0;
+		double delay_threshold = clock_seconds_as_double() + min_fps;
+		unsigned iterations_per_frame = 0;
+		do {
+			++iterations_per_frame;
+			coordinate_plane_iterate(plane);
+
+		} while (clock_seconds_as_double() < delay_threshold);
 		pixel_buffer_update(plane, virtual_win);
 		sdl_blit_texture(renderer, &texture_buf);
 
 		frame_count++;
 		frames_since_print++;
 
-		struct timespec now;
-		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &now);
-
-		struct timespec elapsed;
-		diff_timespecs(&elapsed, last_print, now);
-
-		if (((elapsed.tv_sec * 1000000000) + elapsed.tv_nsec) >
-		    100000000) {
-			double fps =
-			    ((double)frames_since_print) /
-			    (((double)elapsed.tv_sec) * 1000000000.0 +
-			     ((double)elapsed.tv_nsec) / 1000000000.0);
+		double now = clock_seconds_as_double();
+		double elapsed = now - last_print;
+		if (elapsed > 1.0) {
+			double fps = frames_since_print / elapsed;
 			frames_since_print = 0;
-			last_print.tv_sec = now.tv_sec;
-			last_print.tv_nsec = now.tv_nsec;
-			if (fps > 50.0) {
-				++iterations_per_loop;
-			} else if (fps < 40.0 && iterations_per_loop > 1) {
-				--iterations_per_loop;
-			}
+			last_print = now;
 			int fps_printer = 1;	// make configurable?
 			if (fps_printer) {
 				fprintf(stdout,
 					"%lu, "
 					"escaped: %lu, not escaped: %lu "
-					"(fps: %.f ipl: %u)  \r",
+					"(fps: %.f ipf: %u)  \r",
 					plane->iteration_count, plane->escaped,
 					plane->not_escaped, fps,
-					iterations_per_loop);
+					iterations_per_frame);
 				fflush(stdout);
 			}
 		}
