@@ -33,6 +33,100 @@ struct xy_s {
 	long double y;
 };
 
+struct rgb24_s {
+	unsigned char red;
+	unsigned char green;
+	unsigned char blue;
+};
+
+// values are from 0.0 to 1.0
+struct rgb_s {
+	double red;
+	double green;
+	double blue;
+};
+
+// hue is 0.0 to 360.0
+// saturation and value are 0.0 to 0.1
+struct hsv_s {
+	double hue;
+	double sat;
+	double val;
+};
+
+static inline int invalid_hsv_s(struct hsv_s hsv)
+{
+	if (!(hsv.hue >= 0.0 && hsv.hue <= 360.0)) {
+		return 1;
+	}
+	if (!(hsv.sat >= 0 && hsv.sat <= 1.0)) {
+		return 1;
+	}
+	if (!(hsv.val >= 0 && hsv.val <= 1.0)) {
+		return 1;
+	}
+	return 0;
+}
+
+static inline void rgb24_from_rgb(struct rgb24_s *out, struct rgb_s in)
+{
+	out->red = 255 * in.red;
+	out->green = 255 * in.green;
+	out->blue = 255 * in.blue;
+}
+
+static inline unsigned int rgb24_to_uint(struct rgb24_s rgb)
+{
+	unsigned int urgb = ((rgb.red << 16) + (rgb.green << 8) + rgb.blue);
+	return urgb;
+}
+
+// https://dystopiancode.blogspot.com/2012/06/hsv-rgb-conversion-algorithms-in-c.html
+// https://en.wikipedia.org/wiki/HSL_and_HSV
+int rgb_from_hsv(struct rgb_s *rgb, struct hsv_s hsv)
+{
+	if (!rgb || invalid_hsv_s(hsv)) {
+		return 1;
+	}
+
+	double hue = hsv.hue == 360.0 ? 0.0 : hsv.hue;
+	double chroma = hsv.val * hsv.sat;
+	double offset = chroma * (1.0 - fabs(fmod(hue / 60.0, 2) - 1.0));
+	double smallm = hsv.val - chroma;
+
+	if (hue >= 0.0 && hue < 60.0) {
+		rgb->red = chroma + smallm;
+		rgb->green = offset + smallm;
+		rgb->blue = smallm;
+	} else if (hue >= 60.0 && hue < 120.0) {
+		rgb->red = offset + smallm;
+		rgb->green = chroma + smallm;
+		rgb->blue = smallm;
+	} else if (hue >= 120.0 && hue < 180.0) {
+		rgb->red = smallm;
+		rgb->green = chroma + smallm;
+		rgb->blue = offset + smallm;
+	} else if (hue >= 180.0 && hue < 240.0) {
+		rgb->red = smallm;
+		rgb->green = offset + smallm;
+		rgb->blue = chroma + smallm;
+	} else if (hue >= 240.0 && hue < 300.0) {
+		rgb->red = offset + smallm;
+		rgb->green = smallm;
+		rgb->blue = chroma + smallm;
+	} else if (hue >= 300.0 && hue < 360.0) {
+		rgb->red = chroma + smallm;
+		rgb->green = smallm;
+		rgb->blue = offset + smallm;
+	} else {
+		rgb->red = smallm;
+		rgb->green = smallm;
+		rgb->blue = smallm;
+	}
+
+	return 0;
+}
+
 struct iterxy_s {
 	/* coordinate location */
 	struct xy_s c;
@@ -43,6 +137,8 @@ struct iterxy_s {
 	unsigned iterations;
 
 	unsigned escaped;
+
+	struct rgb24_s color;
 };
 
 void ordinary_square(struct iterxy_s *p)
@@ -196,6 +292,7 @@ struct coordinate_plane_s {
 	unsigned long iteration_count;
 	unsigned long escaped;
 	unsigned long not_escaped;
+	unsigned skip_rounds;
 
 	size_t pfuncs_idx;
 
@@ -293,6 +390,9 @@ struct coordinate_plane_s *coordinate_plane_reset(struct coordinate_plane_s
 			p->z.x = 0;
 			p->iterations = 0;
 			p->escaped = 0;
+			p->color = (struct rgb24_s) {.red = 0,.green = 0,.blue =
+				    0
+			};
 		}
 	}
 	return plane;
@@ -302,13 +402,15 @@ struct coordinate_plane_s *coordinate_plane_new(unsigned screen_width,
 						unsigned screen_height,
 						struct xy_s center,
 						long double resolution,
-						size_t pfunc_idx)
+						size_t pfunc_idx,
+						unsigned skip_rounds)
 {
 	size_t size = sizeof(struct coordinate_plane_s);
 	struct coordinate_plane_s *plane = calloc(1, size);
 	if (!plane) {
 		die("could not allocate %zu bytes?", size);
 	}
+	plane->skip_rounds = skip_rounds;
 
 	coordinate_plane_reset(plane, screen_width, screen_height, center,
 			       resolution, pfunc_idx);
@@ -324,6 +426,27 @@ void coordinate_plane_free(struct coordinate_plane_s *plane)
 	free(plane);
 }
 
+void color_from_escape(struct rgb24_s *result, unsigned iteration_count)
+{
+	double log_divisor = 8;
+	// factor should be 0.0 t/m 1.0
+	double factor = fmod(log2(iteration_count) / log_divisor, 1.0);
+	double hue = 360.0 * factor;
+
+#if DEBUG
+	if (iteration_count <= 10 || (iteration_count % 100 == 0)) {
+		fprintf(stdout, "\nit: %u: hue: %g\n", iteration_count, hue);
+	}
+#endif
+
+	double saturation = 1.0;
+	double value = 1.0;
+	struct hsv_s hsv = { hue, saturation, value };
+	struct rgb_s rgb;
+	rgb_from_hsv(&rgb, hsv);
+	rgb24_from_rgb(result, rgb);
+}
+
 size_t coordinate_plane_iterate(struct coordinate_plane_s *plane,
 				unsigned times)
 {
@@ -333,12 +456,29 @@ size_t coordinate_plane_iterate(struct coordinate_plane_s *plane,
 
 	for (size_t i = 0; i < times; ++i) {
 		++(plane->iteration_count);
+		struct rgb24_s escape_color = { 0, 0, 0 };
+		if (plane->iteration_count > plane->skip_rounds) {
+			color_from_escape(&escape_color,
+					  plane->iteration_count);
+		}
+#if DEBUG
+		if (plane->iteration_count <= 10
+		    || (plane->iteration_count % 100 == 0)) {
+			fprintf(stdout,
+				"\ncolor = { 0x%02x, 0x%02x, 0x%02x }\n",
+				(int)escape_color.red, escape_color.green,
+				escape_color.blue);
+		}
+#endif
 		plane->escaped = 0;
 		plane->not_escaped = plane->len;
 		for (size_t j = 0; j < plane->len; ++j) {
 			struct iterxy_s *p = plane->points + j;
-
+			int old_escape = p->escaped;
 			pfunc(p);
+			if (!old_escape && p->escaped) {
+				p->color = escape_color;
+			}
 
 			if (p->escaped) {
 				++(plane->escaped);
@@ -445,8 +585,6 @@ struct pixel_buffer {
 	/* pitch is bytes in a row of pixel data, including padding */
 	unsigned int pitch;
 	unsigned int *pixels;
-	struct rgb24_s *palette;
-	size_t palette_len;
 
 };
 
@@ -479,154 +617,8 @@ struct human_input {
 	struct keyboard_key esc;
 };
 
-struct rgb24_s {
-	unsigned char red;
-	unsigned char green;
-	unsigned char blue;
-};
-
-// values are from 0.0 to 1.0
-struct rgb_s {
-	double red;
-	double green;
-	double blue;
-};
-
-// hue is 0.0 to 360.0
-// saturation and value are 0.0 to 0.1
-struct hsv_s {
-	double hue;
-	double sat;
-	double val;
-};
-
-int invalid_hsv_s(struct hsv_s hsv)
-{
-	if (!(hsv.hue >= 0.0 && hsv.hue <= 360.0)) {
-		return 1;
-	}
-	if (!(hsv.sat >= 0 && hsv.sat <= 1.0)) {
-		return 1;
-	}
-	if (!(hsv.val >= 0 && hsv.val <= 1.0)) {
-		return 1;
-	}
-	return 0;
-}
-
-void rgb24_from_rgb(struct rgb24_s *out, struct rgb_s in)
-{
-	out->red = 255 * in.red;
-	out->green = 255 * in.green;
-	out->blue = 255 * in.blue;
-}
-
-static inline unsigned int rgb24_to_uint(struct rgb24_s rgb)
-{
-	unsigned int urgb = ((rgb.red << 16) + (rgb.green << 8) + rgb.blue);
-	return urgb;
-}
-
-// https://dystopiancode.blogspot.com/2012/06/hsv-rgb-conversion-algorithms-in-c.html
-// https://en.wikipedia.org/wiki/HSL_and_HSV
-int rgb_from_hsv(struct rgb_s *rgb, struct hsv_s hsv)
-{
-	if (!rgb || invalid_hsv_s(hsv)) {
-		return 1;
-	}
-
-	double hue = hsv.hue == 360.0 ? 0.0 : hsv.hue;
-	double chroma = hsv.val * hsv.sat;
-	double offset = chroma * (1.0 - fabs(fmod(hue / 60.0, 2) - 1.0));
-	double smallm = hsv.val - chroma;
-
-	if (hue >= 0.0 && hue < 60.0) {
-		rgb->red = chroma + smallm;
-		rgb->green = offset + smallm;
-		rgb->blue = smallm;
-	} else if (hue >= 60.0 && hue < 120.0) {
-		rgb->red = offset + smallm;
-		rgb->green = chroma + smallm;
-		rgb->blue = smallm;
-	} else if (hue >= 120.0 && hue < 180.0) {
-		rgb->red = smallm;
-		rgb->green = chroma + smallm;
-		rgb->blue = offset + smallm;
-	} else if (hue >= 180.0 && hue < 240.0) {
-		rgb->red = smallm;
-		rgb->green = offset + smallm;
-		rgb->blue = chroma + smallm;
-	} else if (hue >= 240.0 && hue < 300.0) {
-		rgb->red = offset + smallm;
-		rgb->green = smallm;
-		rgb->blue = chroma + smallm;
-	} else if (hue >= 300.0 && hue < 360.0) {
-		rgb->red = chroma + smallm;
-		rgb->green = smallm;
-		rgb->blue = offset + smallm;
-	} else {
-		rgb->red = smallm;
-		rgb->green = smallm;
-		rgb->blue = smallm;
-	}
-
-	return 0;
-}
-
-void bright_palette_range(double from, double to, struct rgb24_s *palette,
-			  size_t len)
-{
-	assert(from < to);
-	assert(from >= 0.0);
-	assert(to <= 360.);
-
-	double distance = to - from;
-	struct rgb_s tmp;
-	for (size_t i = 0; i < len; ++i) {
-		double hue = from + (distance - ((distance / len) * i));
-		if (hue > 360.0) {
-			hue = fmod(hue, 360.0);
-		}
-		struct hsv_s hsv;
-		hsv.hue = hue;
-		hsv.sat = 1.0;
-		hsv.val = 1.0;
-		rgb_from_hsv(&tmp, hsv);
-		rgb24_from_rgb(palette + i, tmp);
-	}
-}
-
-void bright_palette(struct rgb24_s *palette, size_t len)
-{
-	bright_palette_range(0.0, 360.0, palette, len);
-}
-
-unsigned int rgb_for_escape(unsigned int highlight_latest,
-			    unsigned int iterations, unsigned int escaped,
-			    struct rgb24_s *palette, size_t len)
-{
-	if (escaped == 0) {
-		return 0;
-	}
-
-	size_t palette_idx;
-	if ((highlight_latest) && (escaped <= len / 3)) {
-		palette_idx = escaped;
-	} else if ((highlight_latest)
-		   && (((1.0 * escaped) / iterations) < 0.75)) {
-		palette_idx =
-		    (len / 3) + (((1.0 * escaped) / iterations) * (len / 3));
-	} else {
-		palette_idx = (escaped % len);
-	}
-
-	unsigned int urgb = rgb24_to_uint(palette[palette_idx]);
-	return urgb;
-}
-
 void pixel_buffer_update(struct coordinate_plane_s *plane,
-			 struct pixel_buffer *buf,
-			 unsigned int highlight_latest)
+			 struct pixel_buffer *buf)
 {
 	if (plane->screen_width != buf->width) {
 		die("plane->screen_width:%u != buf->width: %u",
@@ -641,10 +633,7 @@ void pixel_buffer_update(struct coordinate_plane_s *plane,
 		for (unsigned int x = 0; x < plane->screen_width; x++) {
 			size_t i = (y * plane->screen_width) + x;
 			struct iterxy_s *p = plane->points + i;
-			unsigned int foreground =
-			    rgb_for_escape(highlight_latest,
-					   plane->iteration_count, p->escaped,
-					   buf->palette, buf->palette_len);
+			unsigned int foreground = rgb24_to_uint(p->color);
 			*(buf->pixels + (y * buf->width) + x) = foreground;
 		}
 	}
@@ -716,8 +705,7 @@ static void *pixel_buffer_resize(struct pixel_buffer *buf, int height,
 }
 
 static struct pixel_buffer *pixel_buffer_new(unsigned int window_x,
-					     unsigned int window_y,
-					     size_t palette_len)
+					     unsigned int window_y)
 {
 	size_t size = sizeof(struct pixel_buffer);
 	struct pixel_buffer *buf = calloc(1, size);
@@ -728,15 +716,6 @@ static struct pixel_buffer *pixel_buffer_new(unsigned int window_x,
 	buf->bytes_per_pixel = sizeof(unsigned int);
 	pixel_buffer_resize(buf, window_y, window_x);
 
-	buf->palette_len = palette_len;
-	size = buf->palette_len * sizeof(struct rgb24_s);
-	buf->palette = calloc(1, size);
-	if (!buf->palette) {
-		die("could not allocate %zu bytes?", size);
-	}
-
-	bright_palette(buf->palette, palette_len);
-
 	return buf;
 }
 
@@ -745,7 +724,6 @@ void pixel_buffer_free(struct pixel_buffer *buf)
 	if (!buf) {
 		return;
 	}
-	free(buf->palette);
 	free(buf->pixels);
 	free(buf);
 }
@@ -1057,8 +1035,6 @@ int main(int argc, const char **argv)
 	int window_x = argc > 1 ? atoi(argv[1]) : 800;
 	int window_y = argc > 2 ? atoi(argv[2]) : (window_x * 3) / 4;
 
-	size_t palette_len = 15;
-
 	long double x_min = -2.5;
 	long double x_max = 1.5;
 
@@ -1069,7 +1045,8 @@ int main(int argc, const char **argv)
 		}
 	}
 	unsigned int func_idx = argc > 5 ? (unsigned)atoi(argv[5]) : 0U;
-	unsigned int highlight_latest = argc > 6 ? (unsigned)atoi(argv[6]) : 0U;
+	// this skips coloring the first N rounds of the display
+	unsigned int skip_rounds = argc > 6 ? (unsigned)atoi(argv[6]) : 12U;
 
 	if (window_x <= 0 || window_y <= 0) {
 		die("window_x = %d\nwindow_y = %d\n", window_x, window_y);
@@ -1084,7 +1061,7 @@ int main(int argc, const char **argv)
 
 	struct coordinate_plane_s *plane =
 	    coordinate_plane_new(window_x, window_y, center, resolution,
-				 func_idx);
+				 func_idx, skip_rounds);
 
 	// SDL_STUFF
 
@@ -1094,8 +1071,7 @@ int main(int argc, const char **argv)
 		    SDL_GetError());
 	}
 
-	struct pixel_buffer *virtual_win =
-	    pixel_buffer_new(window_x, window_y, palette_len);
+	struct pixel_buffer *virtual_win = pixel_buffer_new(window_x, window_y);
 
 	struct sdl_texture_buffer texture_buf;
 	texture_buf.texture = NULL;
@@ -1187,7 +1163,7 @@ int main(int argc, const char **argv)
 			print_directions(plane);
 		}
 		coordinate_plane_iterate(plane, iterations_per_loop);
-		pixel_buffer_update(plane, virtual_win, highlight_latest);
+		pixel_buffer_update(plane, virtual_win);
 		sdl_blit_texture(renderer, &texture_buf);
 
 		frame_count++;
