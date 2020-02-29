@@ -531,12 +531,14 @@ static int coordinate_plane_iterate_context(struct
 	return local_escaped;
 }
 
+#ifndef SKIP_THREADS
 static int coordinate_plane_iterate_inner(void *void_context)
 {
 	struct coordinate_plane_iterate_context *context = NULL;
 	context = (struct coordinate_plane_iterate_context *)void_context;
 	return coordinate_plane_iterate_context(context);
 }
+#endif
 
 static void rgb24_color_from_escape_inner(struct coordinate_plane_s *plane,
 					  struct rgb24_s *escape_color)
