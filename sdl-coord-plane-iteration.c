@@ -34,6 +34,16 @@
 		exit(EXIT_FAILURE); \
 	} while (0)
 
+#define alloc_or_exit(ptr, size) \
+	do { \
+		size_t _alloc_or_exit_size_t = (size_t)(size); \
+		ptr = calloc(1, _alloc_or_exit_size_t); \
+		if (!ptr) { \
+			die("could not allocate %zu bytes for %s?", \
+					_alloc_or_exit_size_t, #ptr); \
+		} \
+	} while (0)
+
 struct rgb24_s {
 	unsigned char red;
 	unsigned char green;
@@ -130,15 +140,6 @@ static int rgb_from_hsv(struct rgb_s *rgb, struct hsv_s hsv)
 	}
 
 	return 0;
-}
-
-static inline void *alloc_or_die(size_t size)
-{
-	void *ptr = calloc(1, size);
-	if (!ptr) {
-		die("could not allocate %zu bytes?", size);
-	}
-	return ptr;
 }
 
 enum coord_plane_escape {
@@ -414,7 +415,7 @@ struct coordinate_plane_s *coordinate_plane_reset(struct coordinate_plane_s
 	if (!plane->points) {
 		plane->len = needed;
 		size_t size = plane->len * sizeof(struct iterxy_s);
-		plane->points = alloc_or_die(size);
+		alloc_or_exit(plane->points, size);
 	}
 
 	long double x_min = coordinate_plane_x_min(plane);
@@ -456,8 +457,11 @@ struct coordinate_plane_s *coordinate_plane_new(unsigned screen_width,
 						size_t pfunc_idx,
 						unsigned skip_rounds)
 {
+	struct coordinate_plane_s *plane = NULL;
 	size_t size = sizeof(struct coordinate_plane_s);
-	struct coordinate_plane_s *plane = alloc_or_die(size);
+
+	alloc_or_exit(plane, size);
+
 	plane->num_threads = 1;
 	plane->skip_rounds = skip_rounds;
 
@@ -615,12 +619,16 @@ static void coordinate_plane_iterate_multi_threaded(struct coordinate_plane_s
 		coordinate_plane_iterate_single_threaded(plane);
 		return;
 	}
-	size_t size = sizeof(thrd_t) * num_threads;
-	thrd_t *thread_ids = alloc_or_die(size);
-	size = sizeof(struct coordinate_plane_iterate_context) * num_threads;
-	struct coordinate_plane_iterate_context *contexts = alloc_or_die(size);
 
-	struct rgb24_s escape_color;
+	thrd_t *thread_ids = NULL;
+	size_t size = sizeof(thrd_t) * num_threads;
+	alloc_or_exit(thread_ids, size);
+
+	struct coordinate_plane_iterate_context *contexts;
+	size = sizeof(struct coordinate_plane_iterate_context) * num_threads;
+	alloc_or_exit(contexts, size);
+
+	struct rgb24_s escape_color = { 0, 0, 0 };
 	rgb24_color_from_escape_inner(plane, &escape_color);
 
 	for (size_t i = 0; i < num_threads; ++i) {
@@ -894,15 +902,17 @@ static void *pixel_buffer_resize(struct pixel_buffer *buf, int height,
 	buf->pixels_len = buf->height * buf->width;
 	buf->pitch = buf->width * buf->bytes_per_pixel;
 	size_t size = buf->pixels_len * buf->bytes_per_pixel;
-	buf->pixels = alloc_or_die(size);
+	alloc_or_exit(buf->pixels, size);
 	return buf->pixels;
 }
 
 static struct pixel_buffer *pixel_buffer_new(unsigned int window_x,
 					     unsigned int window_y)
 {
+	struct pixel_buffer *buf = NULL;
 	size_t size = sizeof(struct pixel_buffer);
-	struct pixel_buffer *buf = alloc_or_die(size);
+
+	alloc_or_exit(buf, size);
 
 	buf->bytes_per_pixel = sizeof(unsigned int);
 	pixel_buffer_resize(buf, window_y, window_x);
