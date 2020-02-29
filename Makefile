@@ -1,6 +1,12 @@
 default: sdl-coord-plane-iteration
 
-CFLAGS=-g -O2 `sdl2-config --cflags` -Wextra -Wall -Wpedantic
+ifeq ($(findstring /usr/include/threads.h,$(wildcard /usr/include/*.h)),)
+THREADS='-DSKIP_THREADS'
+else
+THREADS=
+endif
+
+CFLAGS=-g -O2 `sdl2-config --cflags` -Wextra -Wall -Wpedantic $(THREADS)
 LD_ADD=`sdl2-config --libs` -lm -lpthread
 
 # extracted from https://github.com/torvalds/linux/blob/master/scripts/Lindent

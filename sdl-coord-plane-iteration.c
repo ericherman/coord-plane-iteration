@@ -29,7 +29,9 @@
 #define die(format, ...) \
 	do { \
 		fprintf(stderr, "%s:%d: ", __FILE__, __LINE__); \
-		fprintf(stderr, format __VA_OPT__(,) __VA_ARGS__); \
+		/* fprintf(stderr, format __VA_OPT__(,) __VA_ARGS__); */ \
+		/* fprintf(stderr, format, ##_VA_ARGS__); */ \
+		fprintf(stderr, format, __VA_ARGS__); \
 		fprintf(stderr, "\n"); \
 		exit(EXIT_FAILURE); \
 	} while (0)
@@ -324,13 +326,13 @@ struct named_pfunc_s {
 };
 
 struct named_pfunc_s pfuncs[] = {
-	{ mandlebrot, "mandlebrot" },
-	{ ordinary_square, "ordinary_square" },
-	{ not_a_circle, "not_a_circle" },
-	{ square_binomial_collapse_y2_and_add_orig,
-	 "square_binomial_collapse_y2_and_add_orig," },
-	{ square_binomial_ignore_y2_and_add_orig,
-	 "square_binomial_ignore_y2_and_add_orig," }
+	{mandlebrot, "mandlebrot"},
+	{ordinary_square, "ordinary_square"},
+	{not_a_circle, "not_a_circle"},
+	{square_binomial_collapse_y2_and_add_orig,
+	 "square_binomial_collapse_y2_and_add_orig,"},
+	{square_binomial_ignore_y2_and_add_orig,
+	 "square_binomial_ignore_y2_and_add_orig,"}
 };
 
 const size_t pfuncs_len = 5;
@@ -442,9 +444,8 @@ struct coordinate_plane_s *coordinate_plane_reset(struct coordinate_plane_s
 			p->z.x = 0;
 			p->iterations = 0;
 			p->escaped = 0;
-			p->color = (struct rgb24_s) {.red = 0,.green = 0,.blue =
-				    0
-			};
+			p->color = (struct rgb24_s) {
+			.red = 0,.green = 0,.blue = 0};
 		}
 	}
 	return plane;
@@ -846,7 +847,7 @@ enum coordinate_plane_change human_input_process(struct human_input *input, stru
 		coordinate_plane_next_function(plane);
 		return coordinate_plane_change_yes;
 	}
-
+#ifndef SKIP_THREADS
 	if (input->m.is_down && !input->m.was_down) {
 		++plane->num_threads;
 		return coordinate_plane_change_no;
@@ -857,6 +858,7 @@ enum coordinate_plane_change human_input_process(struct human_input *input, stru
 		}
 		return coordinate_plane_change_no;
 	}
+#endif
 
 	if ((input->w.is_down && !input->w.was_down) ||
 	    (input->up.is_down && !input->up.was_down)) {
@@ -999,16 +1001,17 @@ void print_directions(struct coordinate_plane_s *plane)
 {
 	const char *title = pfuncs[plane->pfuncs_idx].name;
 	printf("\n\n%s\n", title);
-	printf("use arrows or 'wasd' keys to pan\n");
-	printf("use page_down/page_up or 'z' and 'x' keys to zoom in/out\n");
-	printf("space will cycle through available functions\n");
-	printf("escape or 'q' to quit\n");
+	printf("centered on: %Lg, %Lg\n", plane->center.x, plane->center.y);
 	long double x_min = coordinate_plane_x_min(plane);
 	long double x_max = coordinate_plane_x_max(plane);
 	printf("x-axis co-ordinates range from: %Lf to: %Lf\n", x_min, x_max);
 	long double y_min = coordinate_plane_y_min(plane);
 	long double y_max = coordinate_plane_y_max(plane);
 	printf("y-axis co-ordinates range from: %Lf to: %Lf\n", y_min, y_max);
+	printf("use arrows or 'wasd' keys to pan\n");
+	printf("use page_down/page_up or 'z' and 'x' keys to zoom in/out\n");
+	printf("space will cycle through available functions\n");
+	printf("escape or 'q' to quit\n");
 }
 
 struct sdl_texture_buffer {
@@ -1051,7 +1054,7 @@ static void sdl_resize_texture_buf(SDL_Window *window,
 	}
 
 	if (!pixel_buffer_resize(pixel_buf, height, width)) {
-		die("Could not resize pixel_buffer");
+		die("Could not resize pixel_buffer %d, %d", height, width);
 	}
 }
 
@@ -1261,7 +1264,7 @@ int main(int argc, const char **argv)
 	}
 	unsigned int func_idx = argc > 5 ? (unsigned)atoi(argv[5]) : 0U;
 	// this skips coloring the first N rounds of the display
-	unsigned int skip_rounds = argc > 6 ? (unsigned)atoi(argv[6]) : 12U;
+	unsigned int skip_rounds = argc > 6 ? (unsigned)atoi(argv[6]) : 0U;
 
 	if (window_x <= 0 || window_y <= 0) {
 		die("window_x = %d\nwindow_y = %d\n", window_x, window_y);
@@ -1377,7 +1380,6 @@ int main(int argc, const char **argv)
 			SDL_SetWindowTitle(window, title);
 			print_directions(plane);
 		}
-
 		// set a 32 frames per second target
 		uint64_t max_usec_per_frame = usec_per_sec / 32;
 		uint64_t delay_threshold = time_in_usec() + max_usec_per_frame;
