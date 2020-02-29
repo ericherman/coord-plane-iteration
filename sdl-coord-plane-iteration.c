@@ -223,6 +223,52 @@ static enum coord_plane_escape mandlebrot(struct iterxy_s *p)
 	return coord_plane_escape_no;
 }
 
+static enum coord_plane_escape julia(struct iterxy_s *p)
+{
+	struct xy_s seed;
+	seed.x = -0.512511498387847167;
+	seed.y =  0.521295573094847167;
+
+	if (p->escaped) {
+		return coord_plane_escape_before;
+	}
+
+	struct xy_s z = p->z;
+
+	if (p->iterations == 0) {
+		p->z.x = p->c.x;
+		p->z.y = p->c.y;
+		++(p->iterations);
+		return coord_plane_escape_no;
+	}
+
+	long double escape_radius_squared = (2 * 2);
+	long double x2 = (z.x * z.x);
+	long double y2 = (z.y * z.y);
+	if ((x2 + y2) > escape_radius_squared) {
+		p->escaped = p->iterations;
+		return coord_plane_escape_now;
+	} else {
+		/* first, square the complex */
+		/* the y is understood to contain an i, the sqrt(-1) */
+		/* generate and combine together the four combos */
+		long double xx = z.x * z.x;	/* no i */
+		long double yx = z.y * z.x;	/* has i */
+		long double xy = z.x * z.y;	/* has i */
+		long double yy = z.y * z.y * -1;	/* loses the i */
+
+		long double result_x = xx + yy;	/* terms do not contain i */
+		long double result_y = yx + xy;	/* terms contain an i */
+
+		/* then add the seed C to the Z[n]^2 result */
+		p->z.x = result_x + seed.x;
+		p->z.y = result_y + seed.y;
+
+		++(p->iterations);
+	}
+	return coord_plane_escape_no;
+}
+
 /* Z[n+1] = collapse_to_y2_to_y((Z[n])^2) + Orig */
 static enum coord_plane_escape square_binomial_collapse_y2_and_add_orig(struct
 									iterxy_s
@@ -327,6 +373,7 @@ struct named_pfunc_s {
 
 struct named_pfunc_s pfuncs[] = {
 	{mandlebrot, "mandlebrot"},
+	{julia, "julia"},
 	{ordinary_square, "ordinary_square"},
 	{not_a_circle, "not_a_circle"},
 	{square_binomial_collapse_y2_and_add_orig,
