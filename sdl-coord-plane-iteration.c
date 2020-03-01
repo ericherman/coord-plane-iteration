@@ -154,12 +154,6 @@ static bool rgb_from_hsv(rgb_s *rgb, hsv_s hsv)
 	return true;
 }
 
-enum coord_plane_escape {
-	coord_plane_escape_no = 0,
-	coord_plane_escape_now = 1,
-	coord_plane_escape_before = 2
-};
-
 typedef struct xy {
 	long double x;
 	long double y;
@@ -177,15 +171,13 @@ typedef struct iterxy {
 	uint32_t iterations;
 
 	uint32_t escaped;
-
-	rgb24_s color;
 } iterxy_s;
 
 /* Z[n+1] = (Z[n])^2 + Orig */
-static enum coord_plane_escape mandlebrot(iterxy_s *p)
+static void mandlebrot(iterxy_s *p)
 {
 	if (p->escaped) {
-		return coord_plane_escape_before;
+		return;
 	}
 	xy_s z = p->z;
 	long double escape_radius_squared = (2 * 2);
@@ -193,7 +185,7 @@ static enum coord_plane_escape mandlebrot(iterxy_s *p)
 	long double y2 = (z.y * z.y);
 	if ((x2 + y2) > escape_radius_squared) {
 		p->escaped = p->iterations;
-		return coord_plane_escape_now;
+		return;
 	} else {
 		/* first, square the complex */
 		/* the y is understood to contain an i, the sqrt(-1) */
@@ -212,13 +204,12 @@ static enum coord_plane_escape mandlebrot(iterxy_s *p)
 
 		++(p->iterations);
 	}
-	return coord_plane_escape_no;
 }
 
-static enum coord_plane_escape julia(iterxy_s *p)
+static void julia(iterxy_s *p)
 {
 	if (p->escaped) {
-		return coord_plane_escape_before;
+		return;
 	}
 
 	xy_s z = p->z;
@@ -227,7 +218,7 @@ static enum coord_plane_escape julia(iterxy_s *p)
 		p->z.x = p->c.x;
 		p->z.y = p->c.y;
 		++(p->iterations);
-		return coord_plane_escape_no;
+		return;
 	}
 
 	long double escape_radius_squared = (2 * 2);
@@ -235,7 +226,7 @@ static enum coord_plane_escape julia(iterxy_s *p)
 	long double y2 = (z.y * z.y);
 	if ((x2 + y2) > escape_radius_squared) {
 		p->escaped = p->iterations;
-		return coord_plane_escape_now;
+		return;
 	} else {
 		/* first, square the complex */
 		/* the y is understood to contain an i, the sqrt(-1) */
@@ -254,14 +245,13 @@ static enum coord_plane_escape julia(iterxy_s *p)
 
 		++(p->iterations);
 	}
-	return coord_plane_escape_no;
 }
 
 #ifdef INCLUDE_ALL_FUNCTIONS
-static enum coord_plane_escape ordinary_square(iterxy_s *p)
+static void ordinary_square(iterxy_s *p)
 {
 	if (p->escaped) {
-		return coord_plane_escape_before;
+		return;
 	}
 	xy_s z = p->z;
 	long double escape_radius_squared = (2 * 2);
@@ -269,20 +259,19 @@ static enum coord_plane_escape ordinary_square(iterxy_s *p)
 	long double y2 = (z.y * z.y);
 	if ((x2 + y2) > escape_radius_squared) {
 		p->escaped = p->iterations;
-		return coord_plane_escape_now;
+		return;
 	} else {
 		p->z.y = (z.y == 0) ? p->c.y : y2;
 		p->z.x = (z.x == 0) ? p->c.x : x2;
 		++(p->iterations);
 	}
-	return coord_plane_escape_no;
 }
 
 /* Z[n+1] = collapse_to_y2_to_y((Z[n])^2) + Orig */
-static enum coord_plane_escape square_binomial_collapse_y2_add_orig(iterxy_s *p)
+static void square_binomial_collapse_y2_add_orig(iterxy_s *p)
 {
 	if (p->escaped) {
-		return coord_plane_escape_before;
+		return;
 	}
 	xy_s z = p->z;
 	long double escape_radius_squared = (2 * 2);
@@ -290,7 +279,7 @@ static enum coord_plane_escape square_binomial_collapse_y2_add_orig(iterxy_s *p)
 	long double y2 = (z.y * z.y);
 	if ((x2 + y2) > escape_radius_squared) {
 		p->escaped = p->iterations;
-		return coord_plane_escape_now;
+		return;
 	} else {
 		/* z[n+1] = z[n]^2 + B */
 
@@ -307,14 +296,13 @@ static enum coord_plane_escape square_binomial_collapse_y2_add_orig(iterxy_s *p)
 		p->z.y = collapse_y_and_y2_terms + p->c.y;
 		++(p->iterations);
 	}
-	return coord_plane_escape_no;
 }
 
 /* Z[n+1] = ignore_y2((Z[n])^2) + Orig */
-static enum coord_plane_escape square_binomial_ignore_y2_add_orig(iterxy_s *p)
+static void square_binomial_ignore_y2_add_orig(iterxy_s *p)
 {
 	if (p->escaped) {
-		return coord_plane_escape_before;
+		return;
 	}
 	xy_s z = p->z;
 	long double escape_radius_squared = (2 * 2);
@@ -322,7 +310,7 @@ static enum coord_plane_escape square_binomial_ignore_y2_add_orig(iterxy_s *p)
 	long double y2 = (z.y * z.y);
 	if ((x2 + y2) > escape_radius_squared) {
 		p->escaped = p->iterations;
-		return coord_plane_escape_now;
+		return;
 	} else {
 		/* z[n+1] = z[n]^2 + B */
 
@@ -339,13 +327,12 @@ static enum coord_plane_escape square_binomial_ignore_y2_add_orig(iterxy_s *p)
 		p->z.y = xy + yx + p->c.y;
 		++(p->iterations);
 	}
-	return coord_plane_escape_no;
 }
 
-static enum coord_plane_escape not_a_circle(iterxy_s *p)
+static void not_a_circle(iterxy_s *p)
 {
 	if (p->escaped) {
-		return coord_plane_escape_before;
+		return;
 	}
 	xy_s z = p->z;
 	long double escape_radius_squared = (2 * 2);
@@ -353,7 +340,7 @@ static enum coord_plane_escape not_a_circle(iterxy_s *p)
 	long double y2 = (z.y * z.y);
 	if ((x2 + y2) > escape_radius_squared) {
 		p->escaped = p->iterations;
-		return coord_plane_escape_now;
+		return;
 	} else {
 		if (p->iterations == 0) {
 			p->z.y = p->c.y;
@@ -366,11 +353,10 @@ static enum coord_plane_escape not_a_circle(iterxy_s *p)
 		}
 		++(p->iterations);
 	}
-	return coord_plane_escape_no;
 }
 #endif /* INCLUDE_ALL_FUNCTIONS */
 
-typedef enum coord_plane_escape (*pfunc_f) (iterxy_s *p);
+typedef void (*pfunc_f)(iterxy_s *p);
 
 typedef struct named_pfunc {
 	pfunc_f pfunc;
@@ -502,7 +488,6 @@ coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
 			p->z.x = 0;
 			p->iterations = 0;
 			p->escaped = 0;
-			p->color = (rgb24_s) {.red = 0,.green = 0,.blue = 0 };
 		}
 	}
 	return plane;
@@ -586,9 +571,7 @@ static int coordinate_plane_iterate_context(coordinate_plane_iterate_context_s
 		iterxy_s *p = plane->points + j;
 
 		for (size_t i = 0; i < ctx->steps; ++i) {
-			if (pfunc(p) == coord_plane_escape_now) {
-				p->color = ctx->escape_colors[i];
-			}
+			pfunc(p);
 		}
 
 		if (p->escaped) {
@@ -925,14 +908,15 @@ typedef struct human_input {
 	int wheel_zoom;
 } human_input_s;
 
-void pixel_buffer_update(coordinate_plane_s *plane, pixel_buffer_s *buf)
+void pixel_buffer_update(coordinate_plane_s *plane, pixel_buffer_s *buf,
+			 rgb24_s *escape_colors, size_t len)
 {
 	if (plane->screen_width != buf->width) {
-		die("plane->screen_width:%u != buf->width: %u",
+		die("plane->screen_width:%" PRIu32 " != buf->width: %" PRIu32,
 		    plane->screen_width, buf->width);
 	}
 	if (plane->screen_height != buf->height) {
-		die("plane->screen_height:%u != buf->height: %u",
+		die("plane->screen_height:%" PRIu32 " != buf->height: %" PRIu32,
 		    plane->screen_height, buf->height);
 	}
 
@@ -940,7 +924,9 @@ void pixel_buffer_update(coordinate_plane_s *plane, pixel_buffer_s *buf)
 		for (uint32_t x = 0; x < plane->screen_width; x++) {
 			size_t i = (y * plane->screen_width) + x;
 			iterxy_s *p = plane->points + i;
-			uint32_t foreground = rgb24_to_uint(p->color);
+			size_t color_idx = p->escaped % len;
+			rgb24_s color = escape_colors[color_idx];
+			uint32_t foreground = rgb24_to_uint(color);
 			*(buf->pixels + (y * buf->width) + x) = foreground;
 		}
 	}
@@ -1649,6 +1635,33 @@ static int sdl_process_event(sdl_event_context_s *event_ctx,
 	return 0;
 }
 
+rgb24_s *grow_escape_colors(rgb24_s *escape_colors, size_t *len,
+			    size_t skip_rounds, size_t amount)
+{
+	size_t new_len = (amount + (*len));
+	size_t size = sizeof(rgb24_s) * new_len;
+	rgb24_s *grow = realloc(escape_colors, size);
+	if (!grow) {
+		fprintf(stderr,
+			"could not allocate %zu bytes for escape_colors[%zu]?",
+			size, new_len);
+		return escape_colors;
+	}
+	escape_colors = grow;
+	size_t keep = *len;
+	*len = new_len;
+	for (size_t i = keep; i < skip_rounds; ++i) {
+		escape_colors[i].red = 0;
+		escape_colors[i].green = 0;
+		escape_colors[i].blue = 0;
+	}
+	keep = keep >= skip_rounds ? keep : skip_rounds;
+	for (size_t i = keep; i < new_len; ++i) {
+		color_from_escape(escape_colors + i, i);
+	}
+	return escape_colors;
+}
+
 void sdl_coord_plane_iteration(coordinate_plane_s *plane)
 {
 	int window_x = plane->screen_width;
@@ -1696,6 +1709,10 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane)
 	event_ctx.window = window;
 	event_ctx.win_id = SDL_GetWindowID(window);
 	event_ctx.resized = 0;
+
+	size_t escape_colors_len = 0;
+	rgb24_s *escape_colors = NULL;
+	size_t skip_rounds = plane->skip_rounds;
 
 	uint32_t it_per_frame = 1;
 	uint64_t usec_per_sec = (1000 * 1000);
@@ -1759,7 +1776,20 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane)
 
 		coordinate_plane_iterate(plane, it_per_frame);
 
-		pixel_buffer_update(plane, virtual_win);
+		if (plane->iteration_count >= escape_colors_len) {
+			size_t amount_to_grow = 128;
+			escape_colors =
+			    grow_escape_colors(escape_colors,
+					       &escape_colors_len, skip_rounds,
+					       amount_to_grow);
+			if (!escape_colors) {
+				size_t size =
+				    escape_colors_len + amount_to_grow;
+				die("escape_colors == NULL? (size %zu)", size);
+			}
+		}
+		pixel_buffer_update(plane, virtual_win, escape_colors,
+				    escape_colors_len);
 		sdl_blit_texture(renderer, &texture_buf);
 		++frame_count;
 		++frames_since_print;
@@ -1819,6 +1849,7 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane)
 		SDL_Quit();
 
 		/* then collect our own garbage */
+		free(escape_colors);
 		pixel_buffer_free(virtual_win);
 	}
 }
