@@ -1028,8 +1028,11 @@ void print_directions(coordinate_plane_s *plane, FILE *out)
 		fprintf(out, " --seed_x=%Lg --seed_y=%Lg", plane->seed.x,
 			plane->seed.y);
 	}
-	fprintf(out, " --center_x=%Lg --center_y=%Lg", plane->center.x,
-		plane->center.y);
+	if (plane->skip_rounds) {
+		fprintf(out, " --skip_rounds=%" PRIu32, plane->skip_rounds);
+	}
+	fprintf(out, " --center_x=%Lg --center_y=%Lg",
+		plane->center.x, plane->center.y);
 	long double x_min = coordinate_plane_x_min(plane);
 	long double x_max = coordinate_plane_x_max(plane);
 	fprintf(out, " --from=%Lg --to=%Lg", x_min, x_max);
@@ -1038,8 +1041,9 @@ void print_directions(coordinate_plane_s *plane, FILE *out)
 	fprintf(out, "\n");
 	long double y_min = coordinate_plane_y_min(plane);
 	long double y_max = coordinate_plane_y_max(plane);
-	fprintf(out, "(y-axis co-ordinates range from: %Lg to: %Lg)\n", y_min,
-		y_max);
+	fprintf(out,
+		"(y-axis co-ordinates range from: %Lg to: %Lg)\n",
+		y_min, y_max);
 	fprintf(out, "use arrows or 'wasd' keys to pan\n");
 	fprintf(out,
 		"use page_down/page_up or 'z' and 'x' keys to zoom in/out\n");
