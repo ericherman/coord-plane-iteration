@@ -403,6 +403,8 @@ const size_t pfuncs_len = 2;
 #endif /* INCLUDE_ALL_FUNCTIONS */
 
 struct coordinate_plane_s {
+	const char *argv0;
+
 	uint32_t screen_width;
 	uint32_t screen_height;
 
@@ -518,7 +520,8 @@ struct coordinate_plane_s *coordinate_plane_reset(struct coordinate_plane_s
 	return plane;
 }
 
-struct coordinate_plane_s *coordinate_plane_new(uint32_t screen_width,
+struct coordinate_plane_s *coordinate_plane_new(const char *program_name,
+						uint32_t screen_width,
 						uint32_t screen_height,
 						struct xy_s center,
 						long double resolution,
@@ -532,6 +535,7 @@ struct coordinate_plane_s *coordinate_plane_new(uint32_t screen_width,
 
 	alloc_or_exit(plane, size);
 
+	plane->argv0 = program_name;
 	plane->num_threads = num_threads;
 	plane->skip_rounds = skip_rounds;
 
@@ -1029,24 +1033,34 @@ enum coordinate_plane_change human_input_process(struct human_input *input, stru
 	return coordinate_plane_change_no;
 }
 
-void print_directions(struct coordinate_plane_s *plane)
+void print_directions(struct coordinate_plane_s *plane, FILE *out)
 {
 	const char *title = pfuncs[plane->pfuncs_idx].name;
-	printf("\n\n%s\n", title);
+	fprintf(out, "\n\n%s\n", title);
+	fprintf(out, "%s --function=%zu", plane->argv0, plane->pfuncs_idx);
 	if (plane->pfuncs_idx == pfuncs_julia_idx) {
-		printf("seed: %Lg, %Lg\n", plane->seed.x, plane->seed.y);
+		fprintf(out, " --seed_x=%Lg --seed_y=%Lg", plane->seed.x,
+			plane->seed.y);
 	}
-	printf("centered on: %Lg, %Lg\n", plane->center.x, plane->center.y);
+	fprintf(out, " --center_x=%Lg --center_y=%Lg", plane->center.x,
+		plane->center.y);
 	long double x_min = coordinate_plane_x_min(plane);
 	long double x_max = coordinate_plane_x_max(plane);
-	printf("x-axis co-ordinates range from: %Lg to: %Lg\n", x_min, x_max);
+	fprintf(out, " --from=%Lg --to=%Lg", x_min, x_max);
+	fprintf(out, " --width=%" PRIu32, plane->screen_width);
+	fprintf(out, " --height=%" PRIu32, plane->screen_height);
+	fprintf(out, "\n");
 	long double y_min = coordinate_plane_y_min(plane);
 	long double y_max = coordinate_plane_y_max(plane);
-	printf("y-axis co-ordinates range from: %Lg to: %Lg\n", y_min, y_max);
-	printf("use arrows or 'wasd' keys to pan\n");
-	printf("use page_down/page_up or 'z' and 'x' keys to zoom in/out\n");
-	printf("space will cycle through available functions\n");
-	printf("escape or 'q' to quit\n");
+	fprintf(out, "(y-axis co-ordinates range from: %Lg to: %Lg)\n", y_min,
+		y_max);
+	fprintf(out, "use arrows or 'wasd' keys to pan\n");
+	fprintf(out,
+		"use page_down/page_up or 'z' and 'x' keys to zoom in/out\n");
+	fprintf(out, "space will cycle through available functions\n");
+	fprintf(out, "click to recenter the image\n");
+	fprintf(out, "escape or 'q' to quit\n");
+	fflush(out);
 }
 
 static void *pixel_buffer_resize(struct pixel_buffer *buf, int height,
@@ -1158,12 +1172,12 @@ void human_input_init(struct human_input *input)
 struct coord_options_s {
 	int win_width;
 	int win_height;
-	double x_min;
-	double x_max;
-	double center_x;
-	double center_y;
-	double seed_x;
-	double seed_y;
+	long double x_min;
+	long double x_max;
+	long double center_x;
+	long double center_y;
+	long double seed_x;
+	long double seed_y;
 	int function;
 	int threads;
 	int skip_rounds;
@@ -1290,25 +1304,25 @@ static inline int coord_options_parse_argv(struct coord_options_s *options,
 			options->win_height = atoi(optarg);
 			break;
 		case 'f':	/* --from | -f */
-			options->x_min = atof(optarg);
+			options->x_min = strtold(optarg, NULL);
 			break;
 		case 't':	/* --to | -t */
-			options->x_max = atof(optarg);
+			options->x_max = strtold(optarg, NULL);
 			break;
 		case 'x':	/* --center_x | -x */
-			options->center_x = atof(optarg);
+			options->center_x = strtold(optarg, NULL);
 			break;
 		case 'y':	/* --center_y | -y */
-			options->center_y = atof(optarg);
+			options->center_y = strtold(optarg, NULL);
 			break;
 		case 'j':	/* --function | -j */
 			options->function = atoi(optarg);
 			break;
 		case 'r':	/* --seed_x | -r */
-			options->center_x = atof(optarg);
+			options->center_x = strtold(optarg, NULL);
 			break;
 		case 'i':	/* --seed_y | -i */
-			options->center_y = atof(optarg);
+			options->center_y = strtold(optarg, NULL);
 			break;
 		case 'c':	/* --threads | -c */
 			options->threads = atoi(optarg);
@@ -1378,8 +1392,8 @@ static inline struct coordinate_plane_s *coordinate_plane_args(int argc,
 	    (options.x_max - options.x_min) / (1.0 * options.win_width);
 
 	struct coordinate_plane_s *plane =
-	    coordinate_plane_new(options.win_width, options.win_height, center,
-				 resolution, options.function, seed,
+	    coordinate_plane_new(argv[0], options.win_width, options.win_height,
+				 center, resolution, options.function, seed,
 				 options.skip_rounds, options.threads);
 
 	return plane;
@@ -1658,7 +1672,7 @@ void sdl_coord_plane_iteration(struct coordinate_plane_s *plane)
 	texture_buf.texture = NULL;
 	texture_buf.pixel_buf = virtual_win;
 
-	print_directions(plane);
+	print_directions(plane, stdout);
 
 	int x = SDL_WINDOWPOS_UNDEFINED;
 	int y = SDL_WINDOWPOS_UNDEFINED;
@@ -1742,7 +1756,7 @@ void sdl_coord_plane_iteration(struct coordinate_plane_s *plane)
 			iterations_at_last_print = 0;
 			title = pfuncs[plane->pfuncs_idx].name;
 			SDL_SetWindowTitle(window, title);
-			print_directions(plane);
+			print_directions(plane, stdout);
 		}
 		// set a 32 frames per second target
 		uint64_t usec_per_frame_high_threshold = usec_per_sec / 30;
