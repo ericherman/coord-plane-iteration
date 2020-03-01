@@ -163,6 +163,8 @@ struct xy_s {
 };
 
 struct iterxy_s {
+	struct xy_s seed;
+
 	/* coordinate location */
 	struct xy_s c;
 
@@ -175,26 +177,6 @@ struct iterxy_s {
 
 	struct rgb24_s color;
 };
-
-static enum coord_plane_escape ordinary_square(struct iterxy_s *p)
-{
-	if (p->escaped) {
-		return coord_plane_escape_before;
-	}
-	struct xy_s z = p->z;
-	long double escape_radius_squared = (2 * 2);
-	long double x2 = (z.x * z.x);
-	long double y2 = (z.y * z.y);
-	if ((x2 + y2) > escape_radius_squared) {
-		p->escaped = p->iterations;
-		return coord_plane_escape_now;
-	} else {
-		p->z.y = (z.y == 0) ? p->c.y : y2;
-		p->z.x = (z.x == 0) ? p->c.x : x2;
-		++(p->iterations);
-	}
-	return coord_plane_escape_no;
-}
 
 /* Z[n+1] = (Z[n])^2 + Orig */
 static enum coord_plane_escape mandlebrot(struct iterxy_s *p)
@@ -232,10 +214,6 @@ static enum coord_plane_escape mandlebrot(struct iterxy_s *p)
 
 static enum coord_plane_escape julia(struct iterxy_s *p)
 {
-	struct xy_s seed;
-	seed.x = -0.512511498387847167;
-	seed.y = 0.521295573094847167;
-
 	if (p->escaped) {
 		return coord_plane_escape_before;
 	}
@@ -268,9 +246,30 @@ static enum coord_plane_escape julia(struct iterxy_s *p)
 		long double result_y = yx + xy;	/* terms contain an i */
 
 		/* then add the seed C to the Z[n]^2 result */
-		p->z.x = result_x + seed.x;
-		p->z.y = result_y + seed.y;
+		p->z.x = result_x + p->seed.x;
+		p->z.y = result_y + p->seed.y;
 
+		++(p->iterations);
+	}
+	return coord_plane_escape_no;
+}
+
+#ifdef INCLUDE_ALL_FUNCTIONS
+static enum coord_plane_escape ordinary_square(struct iterxy_s *p)
+{
+	if (p->escaped) {
+		return coord_plane_escape_before;
+	}
+	struct xy_s z = p->z;
+	long double escape_radius_squared = (2 * 2);
+	long double x2 = (z.x * z.x);
+	long double y2 = (z.y * z.y);
+	if ((x2 + y2) > escape_radius_squared) {
+		p->escaped = p->iterations;
+		return coord_plane_escape_now;
+	} else {
+		p->z.y = (z.y == 0) ? p->c.y : y2;
+		p->z.x = (z.x == 0) ? p->c.x : x2;
 		++(p->iterations);
 	}
 	return coord_plane_escape_no;
@@ -370,6 +369,7 @@ static enum coord_plane_escape not_a_circle(struct iterxy_s *p)
 	}
 	return coord_plane_escape_no;
 }
+#endif /* INCLUDE_ALL_FUNCTIONS */
 
 typedef enum coord_plane_escape (*pfunc_f) (struct iterxy_s *p);
 
@@ -378,18 +378,26 @@ struct named_pfunc_s {
 	const char *name;
 };
 
+#define pfuncs_mandlebrot_idx	0U
+#define pfuncs_julia_idx	(pfuncs_mandlebrot_idx + 1U)
 struct named_pfunc_s pfuncs[] = {
 	{ mandlebrot, "mandlebrot" },
 	{ julia, "julia" },
+#ifdef INCLUDE_ALL_FUNCTIONS
 	{ ordinary_square, "ordinary_square" },
 	{ not_a_circle, "not_a_circle" },
 	{ square_binomial_collapse_y2_and_add_orig,
 	 "square_binomial_collapse_y2_and_add_orig," },
 	{ square_binomial_ignore_y2_and_add_orig,
 	 "square_binomial_ignore_y2_and_add_orig," }
+#endif /* INCLUDE_ALL_FUNCTIONS */
 };
 
+#ifdef INCLUDE_ALL_FUNCTIONS
 const size_t pfuncs_len = 5;
+#else
+const size_t pfuncs_len = 2;
+#endif /* INCLUDE_ALL_FUNCTIONS */
 
 struct coordinate_plane_s {
 	uint32_t screen_width;
@@ -406,6 +414,7 @@ struct coordinate_plane_s {
 	uint32_t num_threads;
 
 	size_t pfuncs_idx;
+	struct xy_s seed;
 
 	struct iterxy_s *points;
 	size_t len;
@@ -449,7 +458,8 @@ struct coordinate_plane_s *coordinate_plane_reset(struct coordinate_plane_s
 						  uint32_t screen_height,
 						  struct xy_s center,
 						  long double resolution,
-						  size_t pfuncs_idx)
+						  size_t pfuncs_idx,
+						  struct xy_s seed)
 {
 	plane->screen_width = screen_width;
 	plane->screen_height = screen_height;
@@ -462,6 +472,8 @@ struct coordinate_plane_s *coordinate_plane_reset(struct coordinate_plane_s
 	plane->escaped = 0;
 	plane->not_escaped = (plane->screen_width * plane->screen_height);
 	plane->pfuncs_idx = pfuncs_idx;
+	/* cache the seed on the plane for reset */
+	plane->seed = seed;
 
 	size_t needed = screen_width * screen_height;
 	if (plane->points && (plane->len < needed)) {
@@ -480,6 +492,8 @@ struct coordinate_plane_s *coordinate_plane_reset(struct coordinate_plane_s
 		for (size_t px = 0; px < plane->screen_width; ++px) {
 			size_t i = (py * plane->screen_width) + px;
 			struct iterxy_s *p = plane->points + i;
+
+			p->seed = seed;
 
 			/* location on the co-ordinate plane */
 			p->c.y = y_max - (py * plane->resolution);
@@ -511,6 +525,7 @@ struct coordinate_plane_s *coordinate_plane_new(uint32_t screen_width,
 						struct xy_s center,
 						long double resolution,
 						size_t pfunc_idx,
+						struct xy_s seed,
 						uint32_t skip_rounds,
 						uint32_t num_threads)
 {
@@ -523,7 +538,7 @@ struct coordinate_plane_s *coordinate_plane_new(uint32_t screen_width,
 	plane->skip_rounds = skip_rounds;
 
 	coordinate_plane_reset(plane, screen_width, screen_height, center,
-			       resolution, pfunc_idx);
+			       resolution, pfunc_idx, seed);
 
 	return plane;
 }
@@ -763,13 +778,27 @@ size_t coordinate_plane_iterate(struct coordinate_plane_s *plane,
 
 void coordinate_plane_next_function(struct coordinate_plane_s *plane)
 {
-	size_t new_pfuncs_idx = 1 + plane->pfuncs_idx;
+	size_t old_pfuncs_idx = plane->pfuncs_idx;
+	size_t new_pfuncs_idx = 1 + old_pfuncs_idx;
 	if (new_pfuncs_idx >= pfuncs_len) {
 		new_pfuncs_idx = 0;
 	}
+
+	struct xy_s center;
+	struct xy_s seed;
+	if (new_pfuncs_idx == pfuncs_julia_idx) {
+		seed = plane->center;
+		center = plane->seed;
+	} else if (old_pfuncs_idx == pfuncs_julia_idx) {
+		seed = plane->center;
+		center = plane->seed;
+	} else {
+		center = plane->center;
+		seed = plane->seed;
+	}
+
 	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
-			       plane->center, plane->resolution,
-			       new_pfuncs_idx);
+			       center, plane->resolution, new_pfuncs_idx, seed);
 }
 
 void coordinate_plane_zoom_in(struct coordinate_plane_s *plane)
@@ -777,7 +806,7 @@ void coordinate_plane_zoom_in(struct coordinate_plane_s *plane)
 	long double new_resolution = plane->resolution * 0.8;
 	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
 			       plane->center, new_resolution,
-			       plane->pfuncs_idx);
+			       plane->pfuncs_idx, plane->seed);
 }
 
 void coordinate_plane_zoom_out(struct coordinate_plane_s *plane)
@@ -785,7 +814,7 @@ void coordinate_plane_zoom_out(struct coordinate_plane_s *plane)
 	long double new_resolution = plane->resolution * 1.25;
 	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
 			       plane->center, new_resolution,
-			       plane->pfuncs_idx);
+			       plane->pfuncs_idx, plane->seed);
 }
 
 void coordinate_plane_pan_left(struct coordinate_plane_s *plane)
@@ -800,7 +829,7 @@ void coordinate_plane_pan_left(struct coordinate_plane_s *plane)
 
 	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
 			       new_center, plane->resolution,
-			       plane->pfuncs_idx);
+			       plane->pfuncs_idx, plane->seed);
 }
 
 void coordinate_plane_pan_right(struct coordinate_plane_s *plane)
@@ -815,7 +844,7 @@ void coordinate_plane_pan_right(struct coordinate_plane_s *plane)
 
 	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
 			       new_center, plane->resolution,
-			       plane->pfuncs_idx);
+			       plane->pfuncs_idx, plane->seed);
 }
 
 void coordinate_plane_pan_up(struct coordinate_plane_s *plane)
@@ -830,7 +859,7 @@ void coordinate_plane_pan_up(struct coordinate_plane_s *plane)
 
 	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
 			       new_center, plane->resolution,
-			       plane->pfuncs_idx);
+			       plane->pfuncs_idx, plane->seed);
 }
 
 void coordinate_plane_pan_down(struct coordinate_plane_s *plane)
@@ -845,7 +874,7 @@ void coordinate_plane_pan_down(struct coordinate_plane_s *plane)
 
 	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
 			       new_center, plane->resolution,
-			       plane->pfuncs_idx);
+			       plane->pfuncs_idx, plane->seed);
 }
 
 struct pixel_buffer {
@@ -1345,8 +1374,18 @@ int main(int argc, const char **argv)
 		}
 	}
 	uint32_t func_idx = argc > 5 ? (uint32_t) atoi(argv[5]) : 0U;
+
+	struct xy_s seed = {.x = -1.25643,.y = -0.381086 };
+
+	if (argc > 6) {
+		sscanf(argv[6], "%Lf", &seed.x);
+		if (argc > 7) {
+			sscanf(argv[7], "%Lf", &seed.y);
+		}
+	}
+
 	// this skips coloring the first N rounds of the display
-	uint32_t skip_rounds = argc > 6 ? (uint32_t) atoi(argv[6]) : 0U;
+	uint32_t skip_rounds = argc > 8 ? (uint32_t) atoi(argv[8]) : 0U;
 
 	if (window_x <= 0 || window_y <= 0) {
 		die("window_x = %d\nwindow_y = %d\n", window_x, window_y);
@@ -1367,7 +1406,7 @@ int main(int argc, const char **argv)
 
 	struct coordinate_plane_s *plane =
 	    coordinate_plane_new(window_x, window_y, center, resolution,
-				 func_idx, skip_rounds, num_threads);
+				 func_idx, seed, skip_rounds, num_threads);
 
 	// SDL_STUFF
 
@@ -1460,7 +1499,7 @@ int main(int argc, const char **argv)
 					       window_y,
 					       plane->center,
 					       plane->resolution,
-					       plane->pfuncs_idx);
+					       plane->pfuncs_idx, plane->seed);
 			change = coordinate_plane_change_yes;
 			event_ctx.resized = 0;
 		}
