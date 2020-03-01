@@ -1227,10 +1227,7 @@ static inline void coord_options_rationalize(coord_options_s *options)
 	if (options->skip_rounds < 0) {
 		options->skip_rounds = 0;
 	}
-
-#ifdef SKIP_THREADS
-	options->num_threads = 1;
-#else
+#ifndef SKIP_THREADS
 	if (options->threads < 1) {
 		options->threads = (uint32_t)sysconf(_SC_NPROCESSORS_ONLN);
 	}
