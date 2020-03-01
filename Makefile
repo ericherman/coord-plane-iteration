@@ -30,14 +30,19 @@ check: sdl-coord-plane-iteration
 
 tidy:
 	$(LINDENT) \
-		-T FILE \
-		-T size_t -T ssize_t \
-		-T SDL_Texture \
-		-T SDL_Window \
-		-T SDL_Renderer \
-		-T SDL_Event \
-		-T iterxy_s \
-		sdl-coord-plane-iteration.c
+		-T FILE -T size_t -T ssize_t -T bool \
+		-T int8_t -T int16_t -T int32_t -T int64_t \
+		-T uint8_t -T uint16_t -T uint32_t -T uint64_t \
+		-T SDL_Window -T SDL_Renderer -T SDL_Event -T SDL_Texture \
+		-T sdl_event_context_s -T sdl_texture_buffer_s \
+		-T pixel_buffer_s -T keyboard_key_s -T human_input_s \
+		-T hsv_s -T rgb_s -T rgb24_s \
+		-T xy_s -T iterxy_s \
+		-T named_pfunc_s -T pfunc_f \
+		-T coordinate_plane_s -T coordinate_plane_iterate_context_s \
+		-T coord_options_s \
+		./sdl-coord-plane-iteration.c
+
 
 
 clean:

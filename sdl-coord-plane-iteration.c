@@ -56,29 +56,29 @@
 		} \
 	} while (0)
 
-struct rgb24_s {
+typedef struct rgb24 {
 	uint8_t red;
 	uint8_t green;
 	uint8_t blue;
-};
+} rgb24_s;
 
 // values are from 0.0 to 1.0
-struct rgb_s {
+typedef struct rgb {
 	double red;
 	double green;
 	double blue;
-};
+} rgb_s;
 
 // hue is 0.0 to 360.0
 // saturation and value are 0.0 to 0.1
-struct hsv_s {
+typedef struct hsv {
 	double hue;
 	double sat;
 	double val;
-};
+} hsv_s;
 
 #ifndef NDEBUG
-static inline bool invalid_hsv_s(struct hsv_s hsv)
+static inline bool invalid_hsv_s(hsv_s hsv)
 {
 	if (!(hsv.hue >= 0.0 && hsv.hue <= 360.0)) {
 		return true;
@@ -93,14 +93,14 @@ static inline bool invalid_hsv_s(struct hsv_s hsv)
 }
 #endif
 
-static inline void rgb24_from_rgb(struct rgb24_s *out, struct rgb_s in)
+static inline void rgb24_from_rgb(rgb24_s *out, rgb_s in)
 {
 	out->red = 255 * in.red;
 	out->green = 255 * in.green;
 	out->blue = 255 * in.blue;
 }
 
-static inline uint32_t rgb24_to_uint(struct rgb24_s rgb)
+static inline uint32_t rgb24_to_uint(rgb24_s rgb)
 {
 	uint32_t urgb = ((rgb.red << 16) + (rgb.green << 8) + rgb.blue);
 	return urgb;
@@ -108,7 +108,7 @@ static inline uint32_t rgb24_to_uint(struct rgb24_s rgb)
 
 // https://dystopiancode.blogspot.com/2012/06/hsv-rgb-conversion-algorithms-in-c.html
 // https://en.wikipedia.org/wiki/HSL_and_HSV
-static bool rgb_from_hsv(struct rgb_s *rgb, struct hsv_s hsv)
+static bool rgb_from_hsv(rgb_s *rgb, hsv_s hsv)
 {
 #ifndef NDEBUG
 	if (!rgb || invalid_hsv_s(hsv)) {
@@ -160,34 +160,34 @@ enum coord_plane_escape {
 	coord_plane_escape_before = 2
 };
 
-struct xy_s {
+typedef struct xy {
 	long double x;
 	long double y;
-};
+} xy_s;
 
-struct iterxy_s {
-	struct xy_s seed;
+typedef struct iterxy {
+	xy_s seed;
 
 	/* coordinate location */
-	struct xy_s c;
+	xy_s c;
 
 	/* calculated next location */
-	struct xy_s z;
+	xy_s z;
 
 	uint32_t iterations;
 
 	uint32_t escaped;
 
-	struct rgb24_s color;
-};
+	rgb24_s color;
+} iterxy_s;
 
 /* Z[n+1] = (Z[n])^2 + Orig */
-static enum coord_plane_escape mandlebrot(struct iterxy_s *p)
+static enum coord_plane_escape mandlebrot(iterxy_s *p)
 {
 	if (p->escaped) {
 		return coord_plane_escape_before;
 	}
-	struct xy_s z = p->z;
+	xy_s z = p->z;
 	long double escape_radius_squared = (2 * 2);
 	long double x2 = (z.x * z.x);
 	long double y2 = (z.y * z.y);
@@ -215,13 +215,13 @@ static enum coord_plane_escape mandlebrot(struct iterxy_s *p)
 	return coord_plane_escape_no;
 }
 
-static enum coord_plane_escape julia(struct iterxy_s *p)
+static enum coord_plane_escape julia(iterxy_s *p)
 {
 	if (p->escaped) {
 		return coord_plane_escape_before;
 	}
 
-	struct xy_s z = p->z;
+	xy_s z = p->z;
 
 	if (p->iterations == 0) {
 		p->z.x = p->c.x;
@@ -258,12 +258,12 @@ static enum coord_plane_escape julia(struct iterxy_s *p)
 }
 
 #ifdef INCLUDE_ALL_FUNCTIONS
-static enum coord_plane_escape ordinary_square(struct iterxy_s *p)
+static enum coord_plane_escape ordinary_square(iterxy_s *p)
 {
 	if (p->escaped) {
 		return coord_plane_escape_before;
 	}
-	struct xy_s z = p->z;
+	xy_s z = p->z;
 	long double escape_radius_squared = (2 * 2);
 	long double x2 = (z.x * z.x);
 	long double y2 = (z.y * z.y);
@@ -279,14 +279,12 @@ static enum coord_plane_escape ordinary_square(struct iterxy_s *p)
 }
 
 /* Z[n+1] = collapse_to_y2_to_y((Z[n])^2) + Orig */
-static enum coord_plane_escape square_binomial_collapse_y2_and_add_orig(struct
-									iterxy_s
-									*p)
+static enum coord_plane_escape square_binomial_collapse_y2_add_orig(iterxy_s *p)
 {
 	if (p->escaped) {
 		return coord_plane_escape_before;
 	}
-	struct xy_s z = p->z;
+	xy_s z = p->z;
 	long double escape_radius_squared = (2 * 2);
 	long double x2 = (z.x * z.x);
 	long double y2 = (z.y * z.y);
@@ -313,14 +311,12 @@ static enum coord_plane_escape square_binomial_collapse_y2_and_add_orig(struct
 }
 
 /* Z[n+1] = ignore_y2((Z[n])^2) + Orig */
-static enum coord_plane_escape square_binomial_ignore_y2_and_add_orig(struct
-								      iterxy_s
-								      *p)
+static enum coord_plane_escape square_binomial_ignore_y2_add_orig(iterxy_s *p)
 {
 	if (p->escaped) {
 		return coord_plane_escape_before;
 	}
-	struct xy_s z = p->z;
+	xy_s z = p->z;
 	long double escape_radius_squared = (2 * 2);
 	long double x2 = (z.x * z.x);
 	long double y2 = (z.y * z.y);
@@ -346,12 +342,12 @@ static enum coord_plane_escape square_binomial_ignore_y2_and_add_orig(struct
 	return coord_plane_escape_no;
 }
 
-static enum coord_plane_escape not_a_circle(struct iterxy_s *p)
+static enum coord_plane_escape not_a_circle(iterxy_s *p)
 {
 	if (p->escaped) {
 		return coord_plane_escape_before;
 	}
-	struct xy_s z = p->z;
+	xy_s z = p->z;
 	long double escape_radius_squared = (2 * 2);
 	long double x2 = (z.x * z.x);
 	long double y2 = (z.y * z.y);
@@ -374,25 +370,25 @@ static enum coord_plane_escape not_a_circle(struct iterxy_s *p)
 }
 #endif /* INCLUDE_ALL_FUNCTIONS */
 
-typedef enum coord_plane_escape (*pfunc_f) (struct iterxy_s *p);
+typedef enum coord_plane_escape (*pfunc_f) (iterxy_s *p);
 
-struct named_pfunc_s {
+typedef struct named_pfunc {
 	pfunc_f pfunc;
 	const char *name;
-};
+} named_pfunc_s;
 
 #define pfuncs_mandlebrot_idx	0U
 #define pfuncs_julia_idx	(pfuncs_mandlebrot_idx + 1U)
-struct named_pfunc_s pfuncs[] = {
+named_pfunc_s pfuncs[] = {
 	{ mandlebrot, "mandlebrot" },
 	{ julia, "julia" },
 #ifdef INCLUDE_ALL_FUNCTIONS
 	{ ordinary_square, "ordinary_square" },
 	{ not_a_circle, "not_a_circle" },
-	{ square_binomial_collapse_y2_and_add_orig,
-	 "square_binomial_collapse_y2_and_add_orig," },
-	{ square_binomial_ignore_y2_and_add_orig,
-	 "square_binomial_ignore_y2_and_add_orig," }
+	{ square_binomial_collapse_y2_add_orig,
+	 "square_binomial_collapse_y2_add_orig," },
+	{ square_binomial_ignore_y2_add_orig,
+	 "square_binomial_ignore_y2_add_orig," }
 #endif /* INCLUDE_ALL_FUNCTIONS */
 };
 
@@ -402,13 +398,13 @@ const size_t pfuncs_len = 5;
 const size_t pfuncs_len = 2;
 #endif /* INCLUDE_ALL_FUNCTIONS */
 
-struct coordinate_plane_s {
+typedef struct coordinate_plane {
 	const char *argv0;
 
 	uint32_t screen_width;
 	uint32_t screen_height;
 
-	struct xy_s center;
+	xy_s center;
 	long double resolution;
 
 	uint32_t iteration_count;
@@ -419,47 +415,41 @@ struct coordinate_plane_s {
 	uint32_t num_threads;
 
 	size_t pfuncs_idx;
-	struct xy_s seed;
+	xy_s seed;
 
-	struct iterxy_s *points;
+	iterxy_s *points;
 	size_t len;
-};
+} coordinate_plane_s;
 
-static inline long double coordinate_plane_x_min(struct coordinate_plane_s
-						 *plane)
+static inline long double coordinate_plane_x_min(coordinate_plane_s *plane)
 {
 	return plane->center.x -
 	    (plane->resolution * (plane->screen_width / 2));
 }
 
-static inline long double coordinate_plane_y_min(struct coordinate_plane_s
-						 *plane)
+static inline long double coordinate_plane_y_min(coordinate_plane_s *plane)
 {
 	return plane->center.y -
 	    (plane->resolution * (plane->screen_height / 2));
 }
 
-static inline long double coordinate_plane_x_max(struct coordinate_plane_s
-						 *plane)
+static inline long double coordinate_plane_x_max(coordinate_plane_s *plane)
 {
 	return plane->center.x +
 	    (plane->resolution * (plane->screen_width / 2));
 }
 
-static inline long double coordinate_plane_y_max(struct coordinate_plane_s
-						 *plane)
+static inline long double coordinate_plane_y_max(coordinate_plane_s *plane)
 {
 	return plane->center.y +
 	    (plane->resolution * (plane->screen_height / 2));
 }
 
-struct coordinate_plane_s *coordinate_plane_reset(struct coordinate_plane_s
-						  *plane, uint32_t screen_width,
-						  uint32_t screen_height,
-						  struct xy_s center,
-						  long double resolution,
-						  size_t pfuncs_idx,
-						  struct xy_s seed)
+coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
+					   uint32_t screen_width,
+					   uint32_t screen_height, xy_s center,
+					   long double resolution,
+					   size_t pfuncs_idx, xy_s seed)
 {
 	plane->screen_width = screen_width;
 	plane->screen_height = screen_height;
@@ -482,7 +472,7 @@ struct coordinate_plane_s *coordinate_plane_reset(struct coordinate_plane_s
 	}
 	if (!plane->points) {
 		plane->len = needed;
-		size_t size = plane->len * sizeof(struct iterxy_s);
+		size_t size = plane->len * sizeof(iterxy_s);
 		alloc_or_exit(plane->points, size);
 	}
 
@@ -491,7 +481,7 @@ struct coordinate_plane_s *coordinate_plane_reset(struct coordinate_plane_s
 	for (size_t py = 0; py < plane->screen_height; ++py) {
 		for (size_t px = 0; px < plane->screen_width; ++px) {
 			size_t i = (py * plane->screen_width) + px;
-			struct iterxy_s *p = plane->points + i;
+			iterxy_s *p = plane->points + i;
 
 			p->seed = seed;
 
@@ -512,26 +502,24 @@ struct coordinate_plane_s *coordinate_plane_reset(struct coordinate_plane_s
 			p->z.x = 0;
 			p->iterations = 0;
 			p->escaped = 0;
-			p->color = (struct rgb24_s) {
-				.red = 0,.green = 0,.blue = 0
-			};
+			p->color = (rgb24_s) {.red = 0,.green = 0,.blue = 0 };
 		}
 	}
 	return plane;
 }
 
-struct coordinate_plane_s *coordinate_plane_new(const char *program_name,
-						uint32_t screen_width,
-						uint32_t screen_height,
-						struct xy_s center,
-						long double resolution,
-						size_t pfunc_idx,
-						struct xy_s seed,
-						uint32_t skip_rounds,
-						uint32_t num_threads)
+coordinate_plane_s *coordinate_plane_new(const char *program_name,
+					 uint32_t screen_width,
+					 uint32_t screen_height,
+					 xy_s center,
+					 long double resolution,
+					 size_t pfunc_idx,
+					 xy_s seed,
+					 uint32_t skip_rounds,
+					 uint32_t num_threads)
 {
-	struct coordinate_plane_s *plane = NULL;
-	size_t size = sizeof(struct coordinate_plane_s);
+	coordinate_plane_s *plane = NULL;
+	size_t size = sizeof(coordinate_plane_s);
 
 	alloc_or_exit(plane, size);
 
@@ -545,7 +533,7 @@ struct coordinate_plane_s *coordinate_plane_new(const char *program_name,
 	return plane;
 }
 
-void coordinate_plane_free(struct coordinate_plane_s *plane)
+void coordinate_plane_free(coordinate_plane_s *plane)
 {
 	if (plane) {
 		free(plane->points);
@@ -553,7 +541,7 @@ void coordinate_plane_free(struct coordinate_plane_s *plane)
 	free(plane);
 }
 
-static void color_from_escape(struct rgb24_s *result, uint32_t iteration_count)
+static void color_from_escape(rgb24_s *result, uint32_t iteration_count)
 {
 	double log_divisor = 8;
 	// factor should be 0.0 t/m 1.0
@@ -569,34 +557,33 @@ static void color_from_escape(struct rgb24_s *result, uint32_t iteration_count)
 
 	double saturation = 1.0;
 	double value = 1.0;
-	struct hsv_s hsv = { hue, saturation, value };
-	struct rgb_s rgb = { 0x00, 0x00, 0x00 };
+	hsv_s hsv = { hue, saturation, value };
+	rgb_s rgb = { 0x00, 0x00, 0x00 };
 	rgb_from_hsv(&rgb, hsv);
 	rgb24_from_rgb(result, rgb);
 }
 
-struct coordinate_plane_iterate_context {
-	struct coordinate_plane_s *plane;
+typedef struct coordinate_plane_iterate_context {
+	coordinate_plane_s *plane;
 	size_t steps;
 	size_t offset;
 	size_t step_size;
-	struct rgb24_s *escape_colors;
+	rgb24_s *escape_colors;
 	size_t escape_colors_len;
-};
+} coordinate_plane_iterate_context_s;
 
-static int coordinate_plane_iterate_context(struct
-					    coordinate_plane_iterate_context
+static int coordinate_plane_iterate_context(coordinate_plane_iterate_context_s
 					    *ctx)
 {
 	assert(ctx->escape_colors_len >= ctx->steps);
 
-	struct coordinate_plane_s *plane = ctx->plane;
+	coordinate_plane_s *plane = ctx->plane;
 
 	pfunc_f pfunc = pfuncs[plane->pfuncs_idx].pfunc;
 
 	int local_escaped = 0;
 	for (size_t j = ctx->offset; j < plane->len; j += ctx->step_size) {
-		struct iterxy_s *p = plane->points + j;
+		iterxy_s *p = plane->points + j;
 
 		for (size_t i = 0; i < ctx->steps; ++i) {
 			if (pfunc(p) == coord_plane_escape_now) {
@@ -615,15 +602,15 @@ static int coordinate_plane_iterate_context(struct
 #ifndef SKIP_THREADS
 static int coordinate_plane_iterate_inner(void *void_context)
 {
-	struct coordinate_plane_iterate_context *context = NULL;
-	context = (struct coordinate_plane_iterate_context *)void_context;
+	coordinate_plane_iterate_context_s *context = NULL;
+	context = (coordinate_plane_iterate_context_s *)void_context;
 	return coordinate_plane_iterate_context(context);
 }
 #endif
 
 static inline void rgb24_color_from_escape_inner(uint32_t iteration_count,
 						 uint32_t skip_rounds,
-						 struct rgb24_s *escape_color)
+						 rgb24_s *escape_color)
 {
 	if (iteration_count > skip_rounds) {
 		color_from_escape(escape_color, iteration_count);
@@ -638,16 +625,16 @@ static inline void rgb24_color_from_escape_inner(uint32_t iteration_count,
 #endif
 }
 
-static void coordinate_plane_iterate_single_threaded(struct coordinate_plane_s
-						     *plane, uint32_t steps)
+static void coordinate_plane_iterate_single_threaded(coordinate_plane_s *plane,
+						     uint32_t steps)
 {
-	struct rgb24_s escape_colors[steps];
+	rgb24_s escape_colors[steps];
 	for (size_t i = 0; i < steps; ++i) {
 		rgb24_color_from_escape_inner(i + (plane->iteration_count),
 					      plane->skip_rounds,
 					      escape_colors + i);
 	}
-	struct coordinate_plane_iterate_context context;
+	coordinate_plane_iterate_context_s context;
 	context.plane = plane;
 	context.steps = steps;
 	context.offset = 0;
@@ -701,8 +688,8 @@ static void die_on_thread_create_failure(int error, size_t our_id)
 	}
 }
 
-static void coordinate_plane_iterate_multi_threaded(struct coordinate_plane_s
-						    *plane, uint32_t steps)
+static void coordinate_plane_iterate_multi_threaded(coordinate_plane_s *plane,
+						    uint32_t steps)
 {
 	size_t num_threads = plane->num_threads;
 	if (num_threads < 2) {
@@ -714,11 +701,11 @@ static void coordinate_plane_iterate_multi_threaded(struct coordinate_plane_s
 	size_t size = sizeof(thrd_t) * num_threads;
 	alloc_or_exit(thread_ids, size);
 
-	struct coordinate_plane_iterate_context *contexts;
-	size = sizeof(struct coordinate_plane_iterate_context) * num_threads;
+	coordinate_plane_iterate_context_s *contexts;
+	size = sizeof(coordinate_plane_iterate_context_s) * num_threads;
 	alloc_or_exit(contexts, size);
 
-	struct rgb24_s escape_colors[steps];
+	rgb24_s escape_colors[steps];
 	for (size_t i = 0; i < steps; ++i) {
 		rgb24_color_from_escape_inner(i + (plane->iteration_count),
 					      plane->skip_rounds,
@@ -759,8 +746,7 @@ static void coordinate_plane_iterate_multi_threaded(struct coordinate_plane_s
 
 #endif /* #ifndef SKIP_THREADS */
 
-size_t coordinate_plane_iterate(struct coordinate_plane_s *plane,
-				uint32_t steps)
+size_t coordinate_plane_iterate(coordinate_plane_s *plane, uint32_t steps)
 {
 	size_t old_escaped = plane->escaped;
 
@@ -778,7 +764,7 @@ size_t coordinate_plane_iterate(struct coordinate_plane_s *plane,
 	return plane->escaped - old_escaped;
 }
 
-void coordinate_plane_next_function(struct coordinate_plane_s *plane)
+void coordinate_plane_next_function(coordinate_plane_s *plane)
 {
 	size_t old_pfuncs_idx = plane->pfuncs_idx;
 	size_t new_pfuncs_idx = 1 + old_pfuncs_idx;
@@ -786,8 +772,8 @@ void coordinate_plane_next_function(struct coordinate_plane_s *plane)
 		new_pfuncs_idx = 0;
 	}
 
-	struct xy_s center;
-	struct xy_s seed;
+	xy_s center;
+	xy_s seed;
 	if (new_pfuncs_idx == pfuncs_julia_idx) {
 		seed = plane->center;
 		center = plane->seed;
@@ -803,7 +789,7 @@ void coordinate_plane_next_function(struct coordinate_plane_s *plane)
 			       center, plane->resolution, new_pfuncs_idx, seed);
 }
 
-void coordinate_plane_zoom_in(struct coordinate_plane_s *plane)
+void coordinate_plane_zoom_in(coordinate_plane_s *plane)
 {
 	long double new_resolution = plane->resolution * 0.8;
 	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
@@ -811,7 +797,7 @@ void coordinate_plane_zoom_in(struct coordinate_plane_s *plane)
 			       plane->pfuncs_idx, plane->seed);
 }
 
-void coordinate_plane_zoom_out(struct coordinate_plane_s *plane)
+void coordinate_plane_zoom_out(coordinate_plane_s *plane)
 {
 	long double new_resolution = plane->resolution * 1.25;
 	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
@@ -819,9 +805,9 @@ void coordinate_plane_zoom_out(struct coordinate_plane_s *plane)
 			       plane->pfuncs_idx, plane->seed);
 }
 
-void coordinate_plane_pan_left(struct coordinate_plane_s *plane)
+void coordinate_plane_pan_left(coordinate_plane_s *plane)
 {
-	struct xy_s new_center;
+	xy_s new_center;
 	new_center.y = plane->center.y;
 
 	long double x_min = coordinate_plane_x_min(plane);
@@ -834,9 +820,9 @@ void coordinate_plane_pan_left(struct coordinate_plane_s *plane)
 			       plane->pfuncs_idx, plane->seed);
 }
 
-void coordinate_plane_pan_right(struct coordinate_plane_s *plane)
+void coordinate_plane_pan_right(coordinate_plane_s *plane)
 {
-	struct xy_s new_center;
+	xy_s new_center;
 	new_center.y = plane->center.y;
 
 	long double x_min = coordinate_plane_x_min(plane);
@@ -849,9 +835,9 @@ void coordinate_plane_pan_right(struct coordinate_plane_s *plane)
 			       plane->pfuncs_idx, plane->seed);
 }
 
-void coordinate_plane_pan_up(struct coordinate_plane_s *plane)
+void coordinate_plane_pan_up(coordinate_plane_s *plane)
 {
-	struct xy_s new_center;
+	xy_s new_center;
 	new_center.x = plane->center.x;
 
 	long double y_min = coordinate_plane_y_min(plane);
@@ -864,9 +850,9 @@ void coordinate_plane_pan_up(struct coordinate_plane_s *plane)
 			       plane->pfuncs_idx, plane->seed);
 }
 
-void coordinate_plane_pan_down(struct coordinate_plane_s *plane)
+void coordinate_plane_pan_down(coordinate_plane_s *plane)
 {
-	struct xy_s new_center;
+	xy_s new_center;
 	new_center.x = plane->center.x;
 
 	long double y_min = coordinate_plane_y_min(plane);
@@ -879,19 +865,19 @@ void coordinate_plane_pan_down(struct coordinate_plane_s *plane)
 			       plane->pfuncs_idx, plane->seed);
 }
 
-void coordinate_plane_recenter(struct coordinate_plane_s *plane, uint32_t x,
+void coordinate_plane_recenter(coordinate_plane_s *plane, uint32_t x,
 			       uint32_t y)
 {
 	assert(x < plane->screen_width);
 	assert(y < plane->screen_height);
 
-	struct iterxy_s *p = plane->points + ((plane->screen_width * y) + x);
+	iterxy_s *p = plane->points + ((plane->screen_width * y) + x);
 	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
 			       p->c, plane->resolution, plane->pfuncs_idx,
 			       plane->seed);
 }
 
-struct pixel_buffer {
+typedef struct pixel_buffer {
 	uint32_t width;
 	uint32_t height;
 	uint8_t bytes_per_pixel;
@@ -900,47 +886,46 @@ struct pixel_buffer {
 	uint32_t pitch;
 	uint32_t *pixels;
 
-};
+} pixel_buffer_s;
 
-struct keyboard_key {
+typedef struct keyboard_key {
 	uint32_t is_down:1;
 	uint32_t was_down:1;
-};
+} keyboard_key_s;
 
-struct human_input {
-	struct keyboard_key up;
-	struct keyboard_key w;
+typedef struct human_input {
+	keyboard_key_s up;
+	keyboard_key_s w;
 
-	struct keyboard_key left;
-	struct keyboard_key a;
+	keyboard_key_s left;
+	keyboard_key_s a;
 
-	struct keyboard_key down;
-	struct keyboard_key s;
+	keyboard_key_s down;
+	keyboard_key_s s;
 
-	struct keyboard_key right;
-	struct keyboard_key d;
+	keyboard_key_s right;
+	keyboard_key_s d;
 
-	struct keyboard_key page_up;
-	struct keyboard_key z;
+	keyboard_key_s page_up;
+	keyboard_key_s z;
 
-	struct keyboard_key page_down;
-	struct keyboard_key x;
+	keyboard_key_s page_down;
+	keyboard_key_s x;
 
-	struct keyboard_key m;
-	struct keyboard_key n;
-	struct keyboard_key q;
-	struct keyboard_key space;
-	struct keyboard_key esc;
+	keyboard_key_s m;
+	keyboard_key_s n;
+	keyboard_key_s q;
+	keyboard_key_s space;
+	keyboard_key_s esc;
 
 	uint8_t click;
 	uint32_t click_x;
 	uint32_t click_y;
 
 	int wheel_zoom;
-};
+} human_input_s;
 
-void pixel_buffer_update(struct coordinate_plane_s *plane,
-			 struct pixel_buffer *buf)
+void pixel_buffer_update(coordinate_plane_s *plane, pixel_buffer_s *buf)
 {
 	if (plane->screen_width != buf->width) {
 		die("plane->screen_width:%u != buf->width: %u",
@@ -954,7 +939,7 @@ void pixel_buffer_update(struct coordinate_plane_s *plane,
 	for (uint32_t y = 0; y < plane->screen_height; y++) {
 		for (uint32_t x = 0; x < plane->screen_width; x++) {
 			size_t i = (y * plane->screen_width) + x;
-			struct iterxy_s *p = plane->points + i;
+			iterxy_s *p = plane->points + i;
 			uint32_t foreground = rgb24_to_uint(p->color);
 			*(buf->pixels + (y * buf->width) + x) = foreground;
 		}
@@ -967,7 +952,7 @@ enum coordinate_plane_change {
 	coordinate_plane_change_yes = 1,
 };
 
-enum coordinate_plane_change human_input_process(struct human_input *input, struct coordinate_plane_s
+enum coordinate_plane_change human_input_process(human_input_s *input, coordinate_plane_s
 						 *plane)
 {
 	if ((input->esc.is_down) || (input->q.is_down)) {
@@ -1034,7 +1019,7 @@ enum coordinate_plane_change human_input_process(struct human_input *input, stru
 	return coordinate_plane_change_no;
 }
 
-void print_directions(struct coordinate_plane_s *plane, FILE *out)
+void print_directions(coordinate_plane_s *plane, FILE *out)
 {
 	const char *title = pfuncs[plane->pfuncs_idx].name;
 	fprintf(out, "\n\n%s\n", title);
@@ -1064,8 +1049,7 @@ void print_directions(struct coordinate_plane_s *plane, FILE *out)
 	fflush(out);
 }
 
-static void *pixel_buffer_resize(struct pixel_buffer *buf, int height,
-				 int width)
+static void *pixel_buffer_resize(pixel_buffer_s *buf, int height, int width)
 {
 	if (buf->pixels) {
 		free(buf->pixels);
@@ -1079,11 +1063,10 @@ static void *pixel_buffer_resize(struct pixel_buffer *buf, int height,
 	return buf->pixels;
 }
 
-static struct pixel_buffer *pixel_buffer_new(uint32_t window_x,
-					     uint32_t window_y)
+static pixel_buffer_s *pixel_buffer_new(uint32_t window_x, uint32_t window_y)
 {
-	struct pixel_buffer *buf = NULL;
-	size_t size = sizeof(struct pixel_buffer);
+	pixel_buffer_s *buf = NULL;
+	size_t size = sizeof(pixel_buffer_s);
 
 	alloc_or_exit(buf, size);
 
@@ -1093,7 +1076,7 @@ static struct pixel_buffer *pixel_buffer_new(uint32_t window_x,
 	return buf;
 }
 
-void pixel_buffer_free(struct pixel_buffer *buf)
+void pixel_buffer_free(pixel_buffer_s *buf)
 {
 	if (!buf) {
 		return;
@@ -1112,7 +1095,7 @@ static uint64_t time_in_usec(void)
 	return time_in_micros;
 }
 
-void human_input_init(struct human_input *input)
+void human_input_init(human_input_s *input)
 {
 	input->up.is_down = 0;
 	input->up.was_down = 0;
@@ -1172,7 +1155,7 @@ void human_input_init(struct human_input *input)
 	input->wheel_zoom = 0;
 }
 
-struct coord_options_s {
+typedef struct coord_options {
 	int win_width;
 	int win_height;
 	long double x_min;
@@ -1186,9 +1169,9 @@ struct coord_options_s {
 	int skip_rounds;
 	int version;
 	int help;
-};
+} coord_options_s;
 
-static inline void coord_options_init(struct coord_options_s *options)
+static inline void coord_options_init(coord_options_s *options)
 {
 	options->win_width = -1;
 	options->win_height = -1;
@@ -1205,7 +1188,7 @@ static inline void coord_options_init(struct coord_options_s *options)
 	options->help = 0;
 }
 
-static inline void coord_options_rationalize(struct coord_options_s *options)
+static inline void coord_options_rationalize(coord_options_s *options)
 {
 	if (options->help != 1) {
 		options->help = 0;
@@ -1249,12 +1232,12 @@ static inline void coord_options_rationalize(struct coord_options_s *options)
 	options->num_threads = 1;
 #else
 	if (options->threads < 1) {
-		options->threads = (uint32_t) sysconf(_SC_NPROCESSORS_ONLN);
+		options->threads = (uint32_t)sysconf(_SC_NPROCESSORS_ONLN);
 	}
 #endif
 }
 
-static inline int coord_options_parse_argv(struct coord_options_s *options,
+static inline int coord_options_parse_argv(coord_options_s *options,
 					   int argc, char **argv, FILE *err)
 {
 	int opt_char;
@@ -1371,10 +1354,9 @@ static inline void print_help(FILE *out, const char *argv0, const char *version)
 	fprintf(out, "\t-h --help          This message and exit\n");
 }
 
-static inline struct coordinate_plane_s *coordinate_plane_args(int argc,
-							       char **argv)
+static inline coordinate_plane_s *coordinate_plane_args(int argc, char **argv)
 {
-	struct coord_options_s options;
+	coord_options_s options;
 	coord_options_init(&options);
 	coord_options_parse_argv(&options, argc, argv, stdout);
 	coord_options_rationalize(&options);
@@ -1388,13 +1370,13 @@ static inline struct coordinate_plane_s *coordinate_plane_args(int argc,
 		exit(EXIT_SUCCESS);
 	}
 
-	struct xy_s seed = { options.seed_x, options.seed_y };
+	xy_s seed = { options.seed_x, options.seed_y };
 
-	struct xy_s center = { options.center_x, options.center_y };
+	xy_s center = { options.center_x, options.center_y };
 	long double resolution =
 	    (options.x_max - options.x_min) / (1.0 * options.win_width);
 
-	struct coordinate_plane_s *plane =
+	coordinate_plane_s *plane =
 	    coordinate_plane_new(argv[0], options.win_width, options.win_height,
 				 center, resolution, options.function, seed,
 				 options.skip_rounds, options.threads);
@@ -1402,25 +1384,25 @@ static inline struct coordinate_plane_s *coordinate_plane_args(int argc,
 	return plane;
 }
 
-struct sdl_texture_buffer {
+typedef struct sdl_texture_buffer {
 	SDL_Texture *texture;
-	struct pixel_buffer *pixel_buf;
-};
+	pixel_buffer_s *pixel_buf;
+} sdl_texture_buffer_s;
 
-struct sdl_event_context {
-	struct sdl_texture_buffer *texture_buf;
+typedef struct sdl_event_context {
+	sdl_texture_buffer_s *texture_buf;
 	SDL_Window *window;
 	Uint32 win_id;
 	SDL_Renderer *renderer;
 	SDL_Event *event;
 	int resized;
-};
+} sdl_event_context_s;
 
 static void sdl_resize_texture_buf(SDL_Window *window,
 				   SDL_Renderer *renderer,
-				   struct sdl_texture_buffer *texture_buf)
+				   sdl_texture_buffer_s *texture_buf)
 {
-	struct pixel_buffer *pixel_buf = texture_buf->pixel_buf;
+	pixel_buffer_s *pixel_buf = texture_buf->pixel_buf;
 
 	int height, width;
 	SDL_GetWindowSize(window, &width, &height);
@@ -1460,7 +1442,7 @@ static void sdl_blit_bytes(SDL_Renderer *renderer, SDL_Texture *texture,
 }
 
 static void sdl_blit_texture(SDL_Renderer *renderer,
-			     struct sdl_texture_buffer *texture_buf)
+			     sdl_texture_buffer_s *texture_buf)
 {
 	SDL_Texture *texture = texture_buf->texture;
 	const void *pixels = texture_buf->pixel_buf->pixels;
@@ -1469,8 +1451,8 @@ static void sdl_blit_texture(SDL_Renderer *renderer,
 	sdl_blit_bytes(renderer, texture, pixels, pitch);
 }
 
-static void sdl_process_key_event(struct sdl_event_context *event_ctx,
-				  struct human_input *input)
+static void sdl_process_key_event(sdl_event_context_s *event_ctx,
+				  human_input_s *input)
 {
 	int is_down, was_down;
 
@@ -1553,8 +1535,8 @@ static void sdl_process_key_event(struct sdl_event_context *event_ctx,
 	};
 }
 
-static void sdl_process_mouse_event(struct sdl_event_context *event_ctx,
-				    struct human_input *input)
+static void sdl_process_mouse_event(sdl_event_context_s *event_ctx,
+				    human_input_s *input)
 {
 	int x, y;
 	switch (event_ctx->event->type) {
@@ -1577,8 +1559,8 @@ static void sdl_process_mouse_event(struct sdl_event_context *event_ctx,
 	}
 }
 
-static int sdl_process_event(struct sdl_event_context *event_ctx,
-			     struct human_input *input)
+static int sdl_process_event(sdl_event_context_s *event_ctx,
+			     human_input_s *input)
 {
 	switch (event_ctx->event->type) {
 	case SDL_QUIT:
@@ -1666,20 +1648,20 @@ static int sdl_process_event(struct sdl_event_context *event_ctx,
 	return 0;
 }
 
-void sdl_coord_plane_iteration(struct coordinate_plane_s *plane)
+void sdl_coord_plane_iteration(coordinate_plane_s *plane)
 {
 	int window_x = plane->screen_width;
 	int window_y = plane->screen_height;
 
 	Uint32 init_flags = SDL_INIT_VIDEO;
 	if (SDL_Init(init_flags) != 0) {
-		die("Could not SDL_Init(%lu) (%s)", (uint64_t) init_flags,
+		die("Could not SDL_Init(%lu) (%s)", (uint64_t)init_flags,
 		    SDL_GetError());
 	}
 
-	struct pixel_buffer *virtual_win = pixel_buffer_new(window_x, window_y);
+	pixel_buffer_s *virtual_win = pixel_buffer_new(window_x, window_y);
 
-	struct sdl_texture_buffer texture_buf;
+	sdl_texture_buffer_s texture_buf;
 	texture_buf.texture = NULL;
 	texture_buf.pixel_buf = virtual_win;
 
@@ -1706,7 +1688,7 @@ void sdl_coord_plane_iteration(struct coordinate_plane_s *plane)
 	sdl_resize_texture_buf(window, renderer, &texture_buf);
 
 	SDL_Event event;
-	struct sdl_event_context event_ctx;
+	sdl_event_context_s event_ctx;
 	event_ctx.event = &event;
 	event_ctx.texture_buf = &texture_buf;
 	event_ctx.renderer = renderer;
@@ -1721,12 +1703,12 @@ void sdl_coord_plane_iteration(struct coordinate_plane_s *plane)
 	uint64_t frames_since_print = 0;
 	uint64_t frame_count = 0;
 
-	struct human_input input[2];
+	human_input_s input[2];
 	human_input_init(&input[0]);
 	human_input_init(&input[1]);
-	struct human_input *tmp_input = NULL;
-	struct human_input *new_input = &input[1];
-	struct human_input *old_input = &input[0];
+	human_input_s *tmp_input = NULL;
+	human_input_s *new_input = &input[1];
+	human_input_s *old_input = &input[0];
 
 	int shutdown = 0;
 	while (!shutdown) {
@@ -1843,7 +1825,7 @@ void sdl_coord_plane_iteration(struct coordinate_plane_s *plane)
 int main(int argc, char **argv)
 {
 
-	struct coordinate_plane_s *plane = coordinate_plane_args(argc, argv);
+	coordinate_plane_s *plane = coordinate_plane_args(argc, argv);
 
 	sdl_coord_plane_iteration(plane);
 
