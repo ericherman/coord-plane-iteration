@@ -10,7 +10,10 @@
    ./sdl-coord-plane-iteration
 */
 
+#define SDL_COORD_PLANE_ITERATION_VERSION "0.1.0"
+
 #include <assert.h>
+#include <getopt.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -1006,6 +1009,26 @@ enum coordinate_plane_change human_input_process(struct human_input *input, stru
 	return coordinate_plane_change_no;
 }
 
+void print_directions(struct coordinate_plane_s *plane)
+{
+	const char *title = pfuncs[plane->pfuncs_idx].name;
+	printf("\n\n%s\n", title);
+	if (plane->pfuncs_idx == pfuncs_julia_idx) {
+		printf("seed: %Lg, %Lg\n", plane->seed.x, plane->seed.y);
+	}
+	printf("centered on: %Lg, %Lg\n", plane->center.x, plane->center.y);
+	long double x_min = coordinate_plane_x_min(plane);
+	long double x_max = coordinate_plane_x_max(plane);
+	printf("x-axis co-ordinates range from: %Lg to: %Lg\n", x_min, x_max);
+	long double y_min = coordinate_plane_y_min(plane);
+	long double y_max = coordinate_plane_y_max(plane);
+	printf("y-axis co-ordinates range from: %Lg to: %Lg\n", y_min, y_max);
+	printf("use arrows or 'wasd' keys to pan\n");
+	printf("use page_down/page_up or 'z' and 'x' keys to zoom in/out\n");
+	printf("space will cycle through available functions\n");
+	printf("escape or 'q' to quit\n");
+}
+
 static void *pixel_buffer_resize(struct pixel_buffer *buf, int height,
 				 int width)
 {
@@ -1108,21 +1131,234 @@ void human_input_init(struct human_input *input)
 	input->esc.was_down = 0;
 }
 
-void print_directions(struct coordinate_plane_s *plane)
+struct coord_options_s {
+	int win_width;
+	int win_height;
+	double x_min;
+	double x_max;
+	double center_x;
+	double center_y;
+	double seed_x;
+	double seed_y;
+	int function;
+	int threads;
+	int skip_rounds;
+	int version;
+	int help;
+};
+
+static inline void coord_options_init(struct coord_options_s *options)
 {
-	const char *title = pfuncs[plane->pfuncs_idx].name;
-	printf("\n\n%s\n", title);
-	printf("centered on: %Lg, %Lg\n", plane->center.x, plane->center.y);
-	long double x_min = coordinate_plane_x_min(plane);
-	long double x_max = coordinate_plane_x_max(plane);
-	printf("x-axis co-ordinates range from: %Lg to: %Lg\n", x_min, x_max);
-	long double y_min = coordinate_plane_y_min(plane);
-	long double y_max = coordinate_plane_y_max(plane);
-	printf("y-axis co-ordinates range from: %Lg to: %Lg\n", y_min, y_max);
-	printf("use arrows or 'wasd' keys to pan\n");
-	printf("use page_down/page_up or 'z' and 'x' keys to zoom in/out\n");
-	printf("space will cycle through available functions\n");
-	printf("escape or 'q' to quit\n");
+	options->win_width = -1;
+	options->win_height = -1;
+	options->x_min = NAN;
+	options->x_max = NAN;
+	options->center_x = NAN;
+	options->center_y = NAN;
+	options->function = -1;
+	options->seed_x = NAN;
+	options->seed_y = NAN;
+	options->threads = -1;
+	options->skip_rounds = -1;
+	options->version = 0;
+	options->help = 0;
+}
+
+static inline void coord_options_rationalize(struct coord_options_s *options)
+{
+	if (options->help != 1) {
+		options->help = 0;
+	}
+	if (options->version != 1) {
+		options->version = 0;
+	}
+	if (options->win_width < 1) {
+		options->win_width = 1024;
+	}
+	if (options->win_height < 1) {
+		options->win_height = ((options->win_width * 3) / 4);
+	}
+	if (!isfinite(options->x_min)) {
+		options->x_min = -2.5;
+	}
+	if (!isfinite(options->x_max)) {
+		options->x_max = options->x_min + 4.0;
+	}
+	if (!isfinite(options->center_x)) {
+		options->center_x = -0.5;
+	}
+	if (!isfinite(options->center_y)) {
+		options->center_y = 0.0;
+	}
+	if (options->function < 0
+	    || (((size_t)options->function) >= pfuncs_len)) {
+		options->function = pfuncs_mandlebrot_idx;
+	}
+	if (!isfinite(options->seed_x)) {
+		options->seed_x = -1.25643;
+	}
+	if (!isfinite(options->seed_y)) {
+		options->seed_y = -0.381086;
+	}
+	if (options->skip_rounds < 0) {
+		options->skip_rounds = 0;
+	}
+
+#ifdef SKIP_THREADS
+	options->num_threads = 1;
+#else
+	if (options->threads < 1) {
+		options->threads = (uint32_t) sysconf(_SC_NPROCESSORS_ONLN);
+	}
+#endif
+}
+
+static inline int coord_options_parse_argv(struct coord_options_s *options,
+					   int argc, char **argv, FILE *err)
+{
+	int opt_char;
+	int option_index;
+
+	/* yes, optstirng is horrible */
+	const char *optstring = "HVw::h::x::y::f::t::j::r::i::c::s::";
+
+	struct option long_options[] = {
+		{ "help", no_argument, 0, 'H' },
+		{ "version", no_argument, 0, 'V' },
+		{ "width", optional_argument, 0, 'w' },
+		{ "height", optional_argument, 0, 'h' },
+		{ "center_x", optional_argument, 0, 'x' },
+		{ "center_y", optional_argument, 0, 'y' },
+		{ "from", optional_argument, 0, 'f' },
+		{ "to", optional_argument, 0, 't' },
+		{ "function", optional_argument, 0, 'j' },
+		{ "seed_x", optional_argument, 0, 'r' },
+		{ "seed_y", optional_argument, 0, 'i' },
+		{ "threads", optional_argument, 0, 'c' },
+		{ "skip_rounds", optional_argument, 0, 's' },
+		{ 0, 0, 0, 0 }
+	};
+
+	while (1) {
+		option_index = 0;
+
+		opt_char =
+		    getopt_long(argc, argv, optstring, long_options,
+				&option_index);
+
+		/* Detect the end of the options. */
+		if (opt_char == -1)
+			break;
+
+		switch (opt_char) {
+		case 0:
+			break;
+		case 'H':	/* --help | -H */
+			options->help = 1;
+			break;
+		case 'V':	/* --version | -V */
+			options->version = 1;
+			break;
+		case 'w':	/* --width | -w */
+			options->win_width = atoi(optarg);
+			break;
+		case 'h':	/* --height | -h */
+			options->win_height = atoi(optarg);
+			break;
+		case 'f':	/* --from | -f */
+			options->x_min = atof(optarg);
+			break;
+		case 't':	/* --to | -t */
+			options->x_max = atof(optarg);
+			break;
+		case 'x':	/* --center_x | -x */
+			options->center_x = atof(optarg);
+			break;
+		case 'y':	/* --center_y | -y */
+			options->center_y = atof(optarg);
+			break;
+		case 'j':	/* --function | -j */
+			options->function = atoi(optarg);
+			break;
+		case 'r':	/* --seed_x | -r */
+			options->center_x = atof(optarg);
+			break;
+		case 'i':	/* --seed_y | -i */
+			options->center_y = atof(optarg);
+			break;
+		case 'c':	/* --threads | -c */
+			options->threads = atoi(optarg);
+			break;
+		case 's':	/* --skip_rounds | -s */
+			options->skip_rounds = atoi(optarg);
+			break;
+		default:
+			options->help = 1;
+			fprintf(err, "unrecognized option: '%c'\n", opt_char);
+			fflush(err);
+			break;
+		}
+	}
+	return option_index;
+}
+
+static inline void print_help(FILE *out, const char *argv0, const char *version)
+{
+	if (!out) {
+		return;
+	}
+	fprintf(out, "%s version %s\n", argv0, version);
+	fprintf(out, "OPTIONS:\n");
+	fprintf(out, "\t-w --width=n       Witdth of the window in pixels\n");
+	fprintf(out, "\t-h --height=n      Height of the window in pixels\n");
+	fprintf(out, "\t-x --center_x=f    Center of the x-axis, '0.0'\n");
+	fprintf(out, "\t-y --center_y=f    Center of the y-axis, '0.0'\n");
+	fprintf(out, "\t-f --from=f        Left of the x-axis\n");
+	fprintf(out, "\t                           default is '-2.5'\n");
+	fprintf(out, "\t-t --to=f          Right of the x-axis\n");
+	fprintf(out, "\t                           default is '1.5'\n");
+	fprintf(out, "\t-j --function=n    Function number\n");
+	fprintf(out, "\t                           0 for Mandlebrot\n");
+	fprintf(out, "\t                           1 for Julia\n");
+	fprintf(out, "\t-r --seed_x=f      Real (x) part of the Julia seed\n");
+	fprintf(out, "\t-i --seed_y=f      Imaginary (y) part of the seed\n");
+#ifndef SKIP_THREADS
+	fprintf(out, "\t-c --threads=n     Number of threads/cores to use\n");
+#endif
+	fprintf(out, "\t-s --skip_rounds=n Number of iterations left black\n");
+	fprintf(out, "\t-v --version       Print version and exit\n");
+	fprintf(out, "\t-h --help          This message and exit\n");
+}
+
+static inline struct coordinate_plane_s *coordinate_plane_args(int argc,
+							       char **argv)
+{
+	struct coord_options_s options;
+	coord_options_init(&options);
+	coord_options_parse_argv(&options, argc, argv, stdout);
+	coord_options_rationalize(&options);
+
+	if (options.help) {
+		print_help(stdout, argv[0], SDL_COORD_PLANE_ITERATION_VERSION);
+		exit(EXIT_SUCCESS);
+	}
+	if (options.version) {
+		fprintf(stdout, "%s\n", SDL_COORD_PLANE_ITERATION_VERSION);
+		exit(EXIT_SUCCESS);
+	}
+
+	struct xy_s seed = { options.seed_x, options.seed_y };
+
+	struct xy_s center = { options.center_x, options.center_y };
+	long double resolution =
+	    (options.x_max - options.x_min) / (1.0 * options.win_width);
+
+	struct coordinate_plane_s *plane =
+	    coordinate_plane_new(options.win_width, options.win_height, center,
+				 resolution, options.function, seed,
+				 options.skip_rounds, options.threads);
+
+	return plane;
 }
 
 struct sdl_texture_buffer {
@@ -1359,56 +1595,10 @@ static int sdl_process_event(struct sdl_event_context *event_ctx,
 	return 0;
 }
 
-int main(int argc, const char **argv)
+void sdl_coord_plane_iteration(struct coordinate_plane_s *plane)
 {
-	int window_x = argc > 1 ? atoi(argv[1]) : 800;
-	int window_y = argc > 2 ? atoi(argv[2]) : (window_x * 3) / 4;
-
-	long double x_min = -2.5;
-	long double x_max = 1.5;
-
-	if (argc > 3) {
-		sscanf(argv[3], "%Lf", &x_min);
-		if (argc > 4) {
-			sscanf(argv[4], "%Lf", &x_max);
-		}
-	}
-	uint32_t func_idx = argc > 5 ? (uint32_t) atoi(argv[5]) : 0U;
-
-	struct xy_s seed = {.x = -1.25643,.y = -0.381086 };
-
-	if (argc > 6) {
-		sscanf(argv[6], "%Lf", &seed.x);
-		if (argc > 7) {
-			sscanf(argv[7], "%Lf", &seed.y);
-		}
-	}
-
-	// this skips coloring the first N rounds of the display
-	uint32_t skip_rounds = argc > 8 ? (uint32_t) atoi(argv[8]) : 0U;
-
-	if (window_x <= 0 || window_y <= 0) {
-		die("window_x = %d\nwindow_y = %d\n", window_x, window_y);
-	}
-	if (func_idx >= pfuncs_len) {
-		func_idx = 0;
-	}
-	struct xy_s center;
-	center.x = -0.5;
-	center.y = 0.0;
-	long double resolution = (x_max - x_min) / (1.0 * window_x);
-
-#ifdef SKIP_THREADS
-	uint32_t num_threads = 1;
-#else
-	uint32_t num_threads = (uint32_t) sysconf(_SC_NPROCESSORS_ONLN);
-#endif
-
-	struct coordinate_plane_s *plane =
-	    coordinate_plane_new(window_x, window_y, center, resolution,
-				 func_idx, seed, skip_rounds, num_threads);
-
-	// SDL_STUFF
+	int window_x = plane->screen_width;
+	int window_y = plane->screen_height;
 
 	Uint32 init_flags = SDL_INIT_VIDEO;
 	if (SDL_Init(init_flags) != 0) {
@@ -1492,13 +1682,12 @@ int main(int argc, const char **argv)
 		}
 		if (event_ctx.resized) {
 			SDL_GetWindowSize(window, &window_x, &window_y);
-			x_min = coordinate_plane_x_min(plane);
-			x_max = coordinate_plane_x_max(plane);
-			resolution = (x_max - x_min) / (1.0 * window_x);
-			coordinate_plane_reset(plane, window_x,
-					       window_y,
-					       plane->center,
-					       plane->resolution,
+			long double x_min = coordinate_plane_x_min(plane);
+			long double x_max = coordinate_plane_x_max(plane);
+			long double resolution =
+			    (x_max - x_min) / (1.0 * window_x);
+			coordinate_plane_reset(plane, window_x, window_y,
+					       plane->center, resolution,
 					       plane->pfuncs_idx, plane->seed);
 			change = coordinate_plane_change_yes;
 			event_ctx.resized = 0;
@@ -1576,9 +1765,18 @@ int main(int argc, const char **argv)
 		SDL_Quit();
 
 		/* then collect our own garbage */
-		coordinate_plane_free(plane);
 		pixel_buffer_free(virtual_win);
 	}
+}
 
-	return 0;
+int main(int argc, char **argv)
+{
+
+	struct coordinate_plane_s *plane = coordinate_plane_args(argc, argv);
+
+	sdl_coord_plane_iteration(plane);
+
+	if (Make_valgrind_happy) {
+		coordinate_plane_free(plane);
+	}
 }
