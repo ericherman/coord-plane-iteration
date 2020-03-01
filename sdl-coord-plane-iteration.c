@@ -935,6 +935,8 @@ struct human_input {
 	uint8_t click;
 	uint32_t click_x;
 	uint32_t click_y;
+
+	int wheel_zoom;
 };
 
 void pixel_buffer_update(struct coordinate_plane_s *plane,
@@ -1011,12 +1013,14 @@ enum coordinate_plane_change human_input_process(struct human_input *input, stru
 		return coordinate_plane_change_yes;
 	}
 	if ((input->x.is_down && !input->x.was_down) ||
-	    (input->page_up.is_down && !input->page_up.was_down)) {
+	    (input->page_up.is_down && !input->page_up.was_down) ||
+	    (input->wheel_zoom < 0)) {
 		coordinate_plane_zoom_out(plane);
 		return coordinate_plane_change_yes;
 	}
 	if ((input->z.is_down && !input->z.was_down) ||
-	    (input->page_down.is_down && !input->page_down.was_down)) {
+	    (input->page_down.is_down && !input->page_down.was_down) ||
+	    (input->wheel_zoom > 0)) {
 		coordinate_plane_zoom_in(plane);
 		return coordinate_plane_change_yes;
 	}
@@ -1024,9 +1028,6 @@ enum coordinate_plane_change human_input_process(struct human_input *input, stru
 	if (input->click) {
 		coordinate_plane_recenter(plane, input->click_x,
 					  input->click_y);
-		input->click = 0;
-		input->click_x = 0;
-		input->click_y = 0;
 		return coordinate_plane_change_yes;
 	}
 
@@ -1167,6 +1168,8 @@ void human_input_init(struct human_input *input)
 	input->click = 0;
 	input->click_x = 0;
 	input->click_y = 0;
+
+	input->wheel_zoom = 0;
 }
 
 struct coord_options_s {
@@ -1561,6 +1564,13 @@ static void sdl_process_mouse_event(struct sdl_event_context *event_ctx,
 		input->click_x = x;
 		input->click_y = y;
 		break;
+	case SDL_MOUSEWHEEL:
+		if (event_ctx->event->wheel.y > 0) {
+			input->wheel_zoom = 1;
+		} else if (event_ctx->event->wheel.y < 0) {
+			input->wheel_zoom = -1;
+		}
+		break;
 	default:
 		break;
 
@@ -1581,6 +1591,7 @@ static int sdl_process_event(struct sdl_event_context *event_ctx,
 	case SDL_MOUSEMOTION:
 	case SDL_MOUSEBUTTONDOWN:
 	case SDL_MOUSEBUTTONUP:
+	case SDL_MOUSEWHEEL:
 		sdl_process_mouse_event(event_ctx, input);
 		break;
 	case SDL_WINDOWEVENT:
