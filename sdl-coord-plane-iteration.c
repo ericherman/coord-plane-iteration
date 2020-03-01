@@ -423,11 +423,6 @@ struct coordinate_plane_s {
 	size_t len;
 };
 
-static inline long double _dmax(long double a, long double b)
-{
-	return a > b ? a : b;
-}
-
 static inline long double coordinate_plane_x_min(struct coordinate_plane_s
 						 *plane)
 {
@@ -880,6 +875,18 @@ void coordinate_plane_pan_down(struct coordinate_plane_s *plane)
 			       plane->pfuncs_idx, plane->seed);
 }
 
+void coordinate_plane_recenter(struct coordinate_plane_s *plane, uint32_t x,
+			       uint32_t y)
+{
+	assert(x < plane->screen_width);
+	assert(y < plane->screen_height);
+
+	struct iterxy_s *p = plane->points + ((plane->screen_width * y) + x);
+	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
+			       p->c, plane->resolution, plane->pfuncs_idx,
+			       plane->seed);
+}
+
 struct pixel_buffer {
 	uint32_t width;
 	uint32_t height;
@@ -920,6 +927,10 @@ struct human_input {
 	struct keyboard_key q;
 	struct keyboard_key space;
 	struct keyboard_key esc;
+
+	uint8_t click;
+	uint32_t click_x;
+	uint32_t click_y;
 };
 
 void pixel_buffer_update(struct coordinate_plane_s *plane,
@@ -1003,6 +1014,15 @@ enum coordinate_plane_change human_input_process(struct human_input *input, stru
 	if ((input->z.is_down && !input->z.was_down) ||
 	    (input->page_down.is_down && !input->page_down.was_down)) {
 		coordinate_plane_zoom_in(plane);
+		return coordinate_plane_change_yes;
+	}
+
+	if (input->click) {
+		coordinate_plane_recenter(plane, input->click_x,
+					  input->click_y);
+		input->click = 0;
+		input->click_x = 0;
+		input->click_y = 0;
 		return coordinate_plane_change_yes;
 	}
 
@@ -1129,6 +1149,10 @@ void human_input_init(struct human_input *input)
 
 	input->esc.is_down = 0;
 	input->esc.was_down = 0;
+
+	input->click = 0;
+	input->click_x = 0;
+	input->click_y = 0;
 }
 
 struct coord_options_s {
@@ -1512,6 +1536,23 @@ static void sdl_process_key_event(struct sdl_event_context *event_ctx,
 	};
 }
 
+static void sdl_process_mouse_event(struct sdl_event_context *event_ctx,
+				    struct human_input *input)
+{
+	int x, y;
+	switch (event_ctx->event->type) {
+	case SDL_MOUSEBUTTONDOWN:
+		SDL_GetMouseState(&x, &y);
+		input->click = 1;
+		input->click_x = x;
+		input->click_y = y;
+		break;
+	default:
+		break;
+
+	}
+}
+
 static int sdl_process_event(struct sdl_event_context *event_ctx,
 			     struct human_input *input)
 {
@@ -1522,6 +1563,11 @@ static int sdl_process_event(struct sdl_event_context *event_ctx,
 	case SDL_KEYUP:
 	case SDL_KEYDOWN:
 		sdl_process_key_event(event_ctx, input);
+		break;
+	case SDL_MOUSEMOTION:
+	case SDL_MOUSEBUTTONDOWN:
+	case SDL_MOUSEBUTTONUP:
+		sdl_process_mouse_event(event_ctx, input);
 		break;
 	case SDL_WINDOWEVENT:
 		if (event_ctx->event->window.windowID != event_ctx->win_id) {
