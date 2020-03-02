@@ -442,7 +442,7 @@ coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
 	plane->center = center;
 	plane->resolution = resolution;
 	if (!(plane->resolution > 0.0)) {
-		die("invalid resolution %Lg", resolution);
+		die("invalid resolution %.*Lg", DECIMAL_DIG, resolution);
 	}
 	plane->iteration_count = 0;
 	plane->escaped = 0;
@@ -1011,25 +1011,26 @@ void print_directions(coordinate_plane_s *plane, FILE *out)
 	fprintf(out, "\n\n%s\n", title);
 	fprintf(out, "%s --function=%zu", plane->argv0, plane->pfuncs_idx);
 	if (plane->pfuncs_idx == pfuncs_julia_idx) {
-		fprintf(out, " --seed_x=%Lg --seed_y=%Lg", plane->seed.x,
-			plane->seed.y);
+		fprintf(out, " --seed_x=%.*Lg --seed_y=%.*Lg", DECIMAL_DIG,
+			plane->seed.x, DECIMAL_DIG, plane->seed.y);
 	}
 	if (plane->skip_rounds) {
 		fprintf(out, " --skip_rounds=%" PRIu32, plane->skip_rounds);
 	}
-	fprintf(out, " --center_x=%Lg --center_y=%Lg",
-		plane->center.x, plane->center.y);
+	fprintf(out, " --center_x=%.*Lg --center_y=%.*Lg", DECIMAL_DIG,
+		plane->center.x, DECIMAL_DIG, plane->center.y);
 	long double x_min = coordinate_plane_x_min(plane);
 	long double x_max = coordinate_plane_x_max(plane);
-	fprintf(out, " --from=%Lg --to=%Lg", x_min, x_max);
+	fprintf(out, " --from=%.*Lg --to=%.*Lg", DECIMAL_DIG, x_min,
+		DECIMAL_DIG, x_max);
 	fprintf(out, " --width=%" PRIu32, plane->screen_width);
 	fprintf(out, " --height=%" PRIu32, plane->screen_height);
 	fprintf(out, "\n");
 	long double y_min = coordinate_plane_y_min(plane);
 	long double y_max = coordinate_plane_y_max(plane);
 	fprintf(out,
-		"(y-axis co-ordinates range from: %Lg to: %Lg)\n",
-		y_min, y_max);
+		"(y-axis co-ordinates range from: %.*Lg to: %.*Lg)\n",
+		DECIMAL_DIG, y_min, DECIMAL_DIG, y_max);
 	fprintf(out, "use arrows or 'wasd' keys to pan\n");
 	fprintf(out,
 		"use page_down/page_up or 'z' and 'x' keys to zoom in/out\n");
