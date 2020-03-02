@@ -78,7 +78,7 @@ typedef struct hsv {
 } hsv_s;
 
 #ifndef NDEBUG
-static inline bool invalid_hsv_s(hsv_s hsv)
+static bool invalid_hsv_s(hsv_s hsv)
 {
 	if (!(hsv.hue >= 0.0 && hsv.hue <= 360.0)) {
 		return true;
@@ -93,14 +93,14 @@ static inline bool invalid_hsv_s(hsv_s hsv)
 }
 #endif
 
-static inline void rgb24_from_rgb(rgb24_s *out, rgb_s in)
+static void rgb24_from_rgb(rgb24_s *out, rgb_s in)
 {
 	out->red = 255 * in.red;
 	out->green = 255 * in.green;
 	out->blue = 255 * in.blue;
 }
 
-static inline uint32_t rgb24_to_uint(rgb24_s rgb)
+static uint32_t rgb24_to_uint(rgb24_s rgb)
 {
 	uint32_t urgb = ((rgb.red << 16) + (rgb.green << 8) + rgb.blue);
 	return urgb;
@@ -407,25 +407,25 @@ typedef struct coordinate_plane {
 	size_t len;
 } coordinate_plane_s;
 
-static inline long double coordinate_plane_x_min(coordinate_plane_s *plane)
+static long double coordinate_plane_x_min(coordinate_plane_s *plane)
 {
 	return plane->center.x -
 	    (plane->resolution * (plane->screen_width / 2));
 }
 
-static inline long double coordinate_plane_y_min(coordinate_plane_s *plane)
+static long double coordinate_plane_y_min(coordinate_plane_s *plane)
 {
 	return plane->center.y -
 	    (plane->resolution * (plane->screen_height / 2));
 }
 
-static inline long double coordinate_plane_x_max(coordinate_plane_s *plane)
+static long double coordinate_plane_x_max(coordinate_plane_s *plane)
 {
 	return plane->center.x +
 	    (plane->resolution * (plane->screen_width / 2));
 }
 
-static inline long double coordinate_plane_y_max(coordinate_plane_s *plane)
+static long double coordinate_plane_y_max(coordinate_plane_s *plane)
 {
 	return plane->center.y +
 	    (plane->resolution * (plane->screen_height / 2));
@@ -433,7 +433,8 @@ static inline long double coordinate_plane_y_max(coordinate_plane_s *plane)
 
 coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
 					   uint32_t screen_width,
-					   uint32_t screen_height, xy_s center,
+					   uint32_t screen_height,
+					   xy_s center,
 					   long double resolution,
 					   size_t pfuncs_idx, xy_s seed)
 {
@@ -526,17 +527,16 @@ void coordinate_plane_free(coordinate_plane_s *plane)
 	free(plane);
 }
 
-static void color_from_escape(rgb24_s *result, uint32_t iteration_count)
+static void long_tail_gradiant(rgb24_s *result, uint32_t distance)
 {
 	double log_divisor = 8;
 	// factor should be 0.0 t/m 1.0
-	double factor = fmod(log2(iteration_count) / log_divisor, 1.0);
+	double factor = fmod(log2(distance) / log_divisor, 1.0);
 	double hue = 360.0 * factor;
 
 #if DEBUG
-	if (iteration_count <= 10 || (iteration_count % 100 == 0)) {
-		fprintf(stdout, "\nit: %" PRIu32 ": hue: %g\n", iteration_count,
-			hue);
+	if (distance <= 10 || (distance % 100 == 0)) {
+		fprintf(stdout, "\ni: %" PRIu32 ": hue: %g\n", distance, hue);
 	}
 #endif
 
@@ -553,15 +553,11 @@ typedef struct coordinate_plane_iterate_context {
 	size_t steps;
 	size_t offset;
 	size_t step_size;
-	rgb24_s *escape_colors;
-	size_t escape_colors_len;
 } coordinate_plane_iterate_context_s;
 
 static int coordinate_plane_iterate_context(coordinate_plane_iterate_context_s
 					    *ctx)
 {
-	assert(ctx->escape_colors_len >= ctx->steps);
-
 	coordinate_plane_s *plane = ctx->plane;
 
 	pfunc_f pfunc = pfuncs[plane->pfuncs_idx].pfunc;
@@ -582,48 +578,14 @@ static int coordinate_plane_iterate_context(coordinate_plane_iterate_context_s
 	return local_escaped;
 }
 
-#ifndef SKIP_THREADS
-static int coordinate_plane_iterate_inner(void *void_context)
-{
-	coordinate_plane_iterate_context_s *context = NULL;
-	context = (coordinate_plane_iterate_context_s *)void_context;
-	return coordinate_plane_iterate_context(context);
-}
-#endif
-
-static inline void rgb24_color_from_escape_inner(uint32_t iteration_count,
-						 uint32_t skip_rounds,
-						 rgb24_s *escape_color)
-{
-	if (iteration_count > skip_rounds) {
-		color_from_escape(escape_color, iteration_count);
-	}
-#if DEBUG
-	if (iteration_count <= 10 || (iteration_count % 100 == 0)) {
-		fprintf(stdout,
-			"\ncolor = { 0x%02" PRIx32 ", 0x%02" PRIx32 ", 0x%02"
-			PRIx32 " }\n", escape_color->red, escape_color->green,
-			escape_color->blue);
-	}
-#endif
-}
-
 static void coordinate_plane_iterate_single_threaded(coordinate_plane_s *plane,
 						     uint32_t steps)
 {
-	rgb24_s escape_colors[steps];
-	for (size_t i = 0; i < steps; ++i) {
-		rgb24_color_from_escape_inner(i + (plane->iteration_count),
-					      plane->skip_rounds,
-					      escape_colors + i);
-	}
 	coordinate_plane_iterate_context_s context;
 	context.plane = plane;
 	context.steps = steps;
 	context.offset = 0;
 	context.step_size = 1;
-	context.escape_colors = escape_colors;
-	context.escape_colors_len = steps;
 
 	int result = coordinate_plane_iterate_context(&context);
 
@@ -633,6 +595,13 @@ static void coordinate_plane_iterate_single_threaded(coordinate_plane_s *plane,
 }
 
 #ifndef SKIP_THREADS
+
+static int coordinate_plane_iterate_inner(void *void_context)
+{
+	coordinate_plane_iterate_context_s *context = NULL;
+	context = (coordinate_plane_iterate_context_s *)void_context;
+	return coordinate_plane_iterate_context(context);
+}
 
 // we don't really need this boiler-plate to be this verbose
 static void die_on_thread_create_failure(int error, size_t our_id)
@@ -688,20 +657,11 @@ static void coordinate_plane_iterate_multi_threaded(coordinate_plane_s *plane,
 	size = sizeof(coordinate_plane_iterate_context_s) * num_threads;
 	alloc_or_exit(contexts, size);
 
-	rgb24_s escape_colors[steps];
-	for (size_t i = 0; i < steps; ++i) {
-		rgb24_color_from_escape_inner(i + (plane->iteration_count),
-					      plane->skip_rounds,
-					      escape_colors + i);
-	}
-
 	for (size_t i = 0; i < num_threads; ++i) {
 		contexts[i].plane = plane;
 		contexts[i].steps = steps;
 		contexts[i].offset = i;
 		contexts[i].step_size = num_threads;
-		contexts[i].escape_colors = escape_colors;
-		contexts[i].escape_colors_len = steps;
 	}
 
 	for (size_t i = 0; i < num_threads; ++i) {
@@ -868,7 +828,8 @@ typedef struct pixel_buffer {
 	/* pitch is bytes in a row of pixel data, including padding */
 	uint32_t pitch;
 	uint32_t *pixels;
-
+	rgb24_s *palette;
+	size_t palette_len;
 } pixel_buffer_s;
 
 typedef struct keyboard_key {
@@ -908,8 +869,7 @@ typedef struct human_input {
 	int wheel_zoom;
 } human_input_s;
 
-void pixel_buffer_update(coordinate_plane_s *plane, pixel_buffer_s *buf,
-			 rgb24_s *escape_colors, size_t len)
+void pixel_buffer_update(coordinate_plane_s *plane, pixel_buffer_s *buf)
 {
 	if (plane->screen_width != buf->width) {
 		die("plane->screen_width:%" PRIu32 " != buf->width: %" PRIu32,
@@ -924,8 +884,8 @@ void pixel_buffer_update(coordinate_plane_s *plane, pixel_buffer_s *buf,
 		for (uint32_t x = 0; x < plane->screen_width; x++) {
 			size_t i = (y * plane->screen_width) + x;
 			iterxy_s *p = plane->points + i;
-			size_t color_idx = p->escaped % len;
-			rgb24_s color = escape_colors[color_idx];
+			size_t palette_idx = p->escaped % buf->palette_len;
+			rgb24_s color = buf->palette[palette_idx];
 			uint32_t foreground = rgb24_to_uint(color);
 			*(buf->pixels + (y * buf->width) + x) = foreground;
 		}
@@ -938,8 +898,8 @@ enum coordinate_plane_change {
 	coordinate_plane_change_yes = 1,
 };
 
-enum coordinate_plane_change human_input_process(human_input_s *input, coordinate_plane_s
-						 *plane)
+enum coordinate_plane_change human_input_process(human_input_s *input,
+						 coordinate_plane_s *plane)
 {
 	if ((input->esc.is_down) || (input->q.is_down)) {
 		return coordinate_plane_change_shutdown;
@@ -1064,6 +1024,9 @@ static pixel_buffer_s *pixel_buffer_new(uint32_t window_x, uint32_t window_y)
 	buf->bytes_per_pixel = sizeof(uint32_t);
 	pixel_buffer_resize(buf, window_y, window_x);
 
+	buf->palette = NULL;
+	buf->palette_len = 0;
+
 	return buf;
 }
 
@@ -1072,6 +1035,7 @@ void pixel_buffer_free(pixel_buffer_s *buf)
 	if (!buf) {
 		return;
 	}
+	free(buf->palette);
 	free(buf->pixels);
 	free(buf);
 }
@@ -1162,7 +1126,7 @@ typedef struct coord_options {
 	int help;
 } coord_options_s;
 
-static inline void coord_options_init(coord_options_s *options)
+static void coord_options_init(coord_options_s *options)
 {
 	options->win_width = -1;
 	options->win_height = -1;
@@ -1179,7 +1143,7 @@ static inline void coord_options_init(coord_options_s *options)
 	options->help = 0;
 }
 
-static inline void coord_options_rationalize(coord_options_s *options)
+static void coord_options_rationalize(coord_options_s *options)
 {
 	if (options->help != 1) {
 		options->help = 0;
@@ -1225,8 +1189,8 @@ static inline void coord_options_rationalize(coord_options_s *options)
 #endif
 }
 
-static inline int coord_options_parse_argv(coord_options_s *options,
-					   int argc, char **argv, FILE *err)
+static int coord_options_parse_argv(coord_options_s *options,
+				    int argc, char **argv, FILE *err)
 {
 	int opt_char;
 	int option_index;
@@ -1314,7 +1278,7 @@ static inline int coord_options_parse_argv(coord_options_s *options,
 	return option_index;
 }
 
-static inline void print_help(FILE *out, const char *argv0, const char *version)
+static void print_help(FILE *out, const char *argv0, const char *version)
 {
 	if (!out) {
 		return;
@@ -1342,7 +1306,7 @@ static inline void print_help(FILE *out, const char *argv0, const char *version)
 	fprintf(out, "\t-h --help          This message and exit\n");
 }
 
-static inline coordinate_plane_s *coordinate_plane_args(int argc, char **argv)
+static coordinate_plane_s *coordinate_plane_args(int argc, char **argv)
 {
 	coord_options_s options;
 	coord_options_init(&options);
@@ -1636,31 +1600,31 @@ static int sdl_process_event(sdl_event_context_s *event_ctx,
 	return 0;
 }
 
-rgb24_s *grow_escape_colors(rgb24_s *escape_colors, size_t *len,
-			    size_t skip_rounds, size_t amount)
+rgb24_s *grow_palette(rgb24_s *palette, size_t *len, size_t prefix_black,
+		      size_t amount)
 {
 	size_t new_len = (amount + (*len));
 	size_t size = sizeof(rgb24_s) * new_len;
-	rgb24_s *grow = realloc(escape_colors, size);
+	rgb24_s *grow = realloc(palette, size);
 	if (!grow) {
 		fprintf(stderr,
-			"could not allocate %zu bytes for escape_colors[%zu]?",
+			"could not allocate %zu bytes for palette[%zu]?",
 			size, new_len);
-		return escape_colors;
+		return palette;
 	}
-	escape_colors = grow;
+	palette = grow;
 	size_t keep = *len;
 	*len = new_len;
-	for (size_t i = keep; i < skip_rounds; ++i) {
-		escape_colors[i].red = 0;
-		escape_colors[i].green = 0;
-		escape_colors[i].blue = 0;
+	for (size_t i = keep; i < prefix_black; ++i) {
+		palette[i].red = 0;
+		palette[i].green = 0;
+		palette[i].blue = 0;
 	}
-	keep = keep >= skip_rounds ? keep : skip_rounds;
+	keep = keep >= prefix_black ? keep : prefix_black;
 	for (size_t i = keep; i < new_len; ++i) {
-		color_from_escape(escape_colors + i, i);
+		long_tail_gradiant(palette + i, i);
 	}
-	return escape_colors;
+	return palette;
 }
 
 void sdl_coord_plane_iteration(coordinate_plane_s *plane)
@@ -1675,6 +1639,14 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane)
 	}
 
 	pixel_buffer_s *virtual_win = pixel_buffer_new(window_x, window_y);
+	size_t new_palette_len = 1024;
+	virtual_win->palette =
+	    grow_palette(virtual_win->palette, &virtual_win->palette_len,
+			 plane->skip_rounds, new_palette_len);
+	if (!virtual_win->palette) {
+		size_t size = sizeof(rgb24_s) * new_palette_len;
+		die("palette == NULL? (size %zu)", size);
+	}
 
 	sdl_texture_buffer_s texture_buf;
 	texture_buf.texture = NULL;
@@ -1710,10 +1682,6 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane)
 	event_ctx.window = window;
 	event_ctx.win_id = SDL_GetWindowID(window);
 	event_ctx.resized = 0;
-
-	size_t escape_colors_len = 0;
-	rgb24_s *escape_colors = NULL;
-	size_t skip_rounds = plane->skip_rounds;
 
 	uint32_t it_per_frame = 1;
 	uint64_t usec_per_sec = (1000 * 1000);
@@ -1776,21 +1744,7 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane)
 		uint64_t before = time_in_usec();
 
 		coordinate_plane_iterate(plane, it_per_frame);
-
-		if (plane->iteration_count >= escape_colors_len) {
-			size_t amount_to_grow = 128;
-			escape_colors =
-			    grow_escape_colors(escape_colors,
-					       &escape_colors_len, skip_rounds,
-					       amount_to_grow);
-			if (!escape_colors) {
-				size_t size =
-				    escape_colors_len + amount_to_grow;
-				die("escape_colors == NULL? (size %zu)", size);
-			}
-		}
-		pixel_buffer_update(plane, virtual_win, escape_colors,
-				    escape_colors_len);
+		pixel_buffer_update(plane, virtual_win);
 		sdl_blit_texture(renderer, &texture_buf);
 		++frame_count;
 		++frames_since_print;
@@ -1850,7 +1804,6 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane)
 		SDL_Quit();
 
 		/* then collect our own garbage */
-		free(escape_colors);
 		pixel_buffer_free(virtual_win);
 	}
 }
