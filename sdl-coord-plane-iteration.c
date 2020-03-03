@@ -56,104 +56,6 @@
 		} \
 	} while (0)
 
-typedef struct rgb24 {
-	uint8_t red;
-	uint8_t green;
-	uint8_t blue;
-} rgb24_s;
-
-// values are from 0.0 to 1.0
-typedef struct rgb {
-	double red;
-	double green;
-	double blue;
-} rgb_s;
-
-// hue is 0.0 to 360.0
-// saturation and value are 0.0 to 0.1
-typedef struct hsv {
-	double hue;
-	double sat;
-	double val;
-} hsv_s;
-
-#ifndef NDEBUG
-static bool invalid_hsv_s(hsv_s hsv)
-{
-	if (!(hsv.hue >= 0.0 && hsv.hue <= 360.0)) {
-		return true;
-	}
-	if (!(hsv.sat >= 0 && hsv.sat <= 1.0)) {
-		return true;
-	}
-	if (!(hsv.val >= 0 && hsv.val <= 1.0)) {
-		return true;
-	}
-	return false;
-}
-#endif
-
-static void rgb24_from_rgb(rgb24_s *out, rgb_s in)
-{
-	out->red = 255 * in.red;
-	out->green = 255 * in.green;
-	out->blue = 255 * in.blue;
-}
-
-static uint32_t rgb24_to_uint(rgb24_s rgb)
-{
-	uint32_t urgb = ((rgb.red << 16) + (rgb.green << 8) + rgb.blue);
-	return urgb;
-}
-
-// https://dystopiancode.blogspot.com/2012/06/hsv-rgb-conversion-algorithms-in-c.html
-// https://en.wikipedia.org/wiki/HSL_and_HSV
-static bool rgb_from_hsv(rgb_s *rgb, hsv_s hsv)
-{
-#ifndef NDEBUG
-	if (!rgb || invalid_hsv_s(hsv)) {
-		return false;
-	}
-#endif
-
-	double hue = hsv.hue == 360.0 ? 0.0 : hsv.hue;
-	double chroma = hsv.val * hsv.sat;
-	double offset = chroma * (1.0 - fabs(fmod(hue / 60.0, 2) - 1.0));
-	double smallm = hsv.val - chroma;
-
-	if (hue >= 0.0 && hue < 60.0) {
-		rgb->red = chroma + smallm;
-		rgb->green = offset + smallm;
-		rgb->blue = smallm;
-	} else if (hue >= 60.0 && hue < 120.0) {
-		rgb->red = offset + smallm;
-		rgb->green = chroma + smallm;
-		rgb->blue = smallm;
-	} else if (hue >= 120.0 && hue < 180.0) {
-		rgb->red = smallm;
-		rgb->green = chroma + smallm;
-		rgb->blue = offset + smallm;
-	} else if (hue >= 180.0 && hue < 240.0) {
-		rgb->red = smallm;
-		rgb->green = offset + smallm;
-		rgb->blue = chroma + smallm;
-	} else if (hue >= 240.0 && hue < 300.0) {
-		rgb->red = offset + smallm;
-		rgb->green = smallm;
-		rgb->blue = chroma + smallm;
-	} else if (hue >= 300.0 && hue < 360.0) {
-		rgb->red = chroma + smallm;
-		rgb->green = smallm;
-		rgb->blue = offset + smallm;
-	} else {
-		rgb->red = smallm;
-		rgb->green = smallm;
-		rgb->blue = smallm;
-	}
-
-	return true;
-}
-
 typedef struct xy {
 	long double x;
 	long double y;
@@ -527,27 +429,6 @@ void coordinate_plane_free(coordinate_plane_s *plane)
 	free(plane);
 }
 
-static void long_tail_gradiant(rgb24_s *result, uint32_t distance)
-{
-	double log_divisor = 8;
-	// factor should be 0.0 t/m 1.0
-	double factor = fmod(log2(distance) / log_divisor, 1.0);
-	double hue = 360.0 * factor;
-
-#if DEBUG
-	if (distance <= 10 || (distance % 100 == 0)) {
-		fprintf(stdout, "\ni: %" PRIu32 ": hue: %g\n", distance, hue);
-	}
-#endif
-
-	double saturation = 1.0;
-	double value = 1.0;
-	hsv_s hsv = { hue, saturation, value };
-	rgb_s rgb = { 0x00, 0x00, 0x00 };
-	rgb_from_hsv(&rgb, hsv);
-	rgb24_from_rgb(result, rgb);
-}
-
 typedef struct coordinate_plane_iterate_context {
 	coordinate_plane_s *plane;
 	size_t steps;
@@ -818,6 +699,125 @@ void coordinate_plane_recenter(coordinate_plane_s *plane, uint32_t x,
 	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
 			       p->c, plane->resolution, plane->pfuncs_idx,
 			       plane->seed);
+}
+
+typedef struct rgb24 {
+	uint8_t red;
+	uint8_t green;
+	uint8_t blue;
+} rgb24_s;
+
+// values are from 0.0 to 1.0
+typedef struct rgb {
+	double red;
+	double green;
+	double blue;
+} rgb_s;
+
+// hue is 0.0 to 360.0
+// saturation and value are 0.0 to 0.1
+typedef struct hsv {
+	double hue;
+	double sat;
+	double val;
+} hsv_s;
+
+#ifndef NDEBUG
+static bool invalid_hsv_s(hsv_s hsv)
+{
+	if (!(hsv.hue >= 0.0 && hsv.hue <= 360.0)) {
+		return true;
+	}
+	if (!(hsv.sat >= 0 && hsv.sat <= 1.0)) {
+		return true;
+	}
+	if (!(hsv.val >= 0 && hsv.val <= 1.0)) {
+		return true;
+	}
+	return false;
+}
+#endif
+
+static void rgb24_from_rgb(rgb24_s *out, rgb_s in)
+{
+	out->red = 255 * in.red;
+	out->green = 255 * in.green;
+	out->blue = 255 * in.blue;
+}
+
+static uint32_t rgb24_to_uint(rgb24_s rgb)
+{
+	uint32_t urgb = ((rgb.red << 16) + (rgb.green << 8) + rgb.blue);
+	return urgb;
+}
+
+// https://dystopiancode.blogspot.com/2012/06/hsv-rgb-conversion-algorithms-in-c.html
+// https://en.wikipedia.org/wiki/HSL_and_HSV
+static bool rgb_from_hsv(rgb_s *rgb, hsv_s hsv)
+{
+#ifndef NDEBUG
+	if (!rgb || invalid_hsv_s(hsv)) {
+		return false;
+	}
+#endif
+
+	double hue = hsv.hue == 360.0 ? 0.0 : hsv.hue;
+	double chroma = hsv.val * hsv.sat;
+	double offset = chroma * (1.0 - fabs(fmod(hue / 60.0, 2) - 1.0));
+	double smallm = hsv.val - chroma;
+
+	if (hue >= 0.0 && hue < 60.0) {
+		rgb->red = chroma + smallm;
+		rgb->green = offset + smallm;
+		rgb->blue = smallm;
+	} else if (hue >= 60.0 && hue < 120.0) {
+		rgb->red = offset + smallm;
+		rgb->green = chroma + smallm;
+		rgb->blue = smallm;
+	} else if (hue >= 120.0 && hue < 180.0) {
+		rgb->red = smallm;
+		rgb->green = chroma + smallm;
+		rgb->blue = offset + smallm;
+	} else if (hue >= 180.0 && hue < 240.0) {
+		rgb->red = smallm;
+		rgb->green = offset + smallm;
+		rgb->blue = chroma + smallm;
+	} else if (hue >= 240.0 && hue < 300.0) {
+		rgb->red = offset + smallm;
+		rgb->green = smallm;
+		rgb->blue = chroma + smallm;
+	} else if (hue >= 300.0 && hue < 360.0) {
+		rgb->red = chroma + smallm;
+		rgb->green = smallm;
+		rgb->blue = offset + smallm;
+	} else {
+		rgb->red = smallm;
+		rgb->green = smallm;
+		rgb->blue = smallm;
+	}
+
+	return true;
+}
+
+static void long_tail_gradiant(rgb24_s *result, uint32_t distance)
+{
+	double log_divisor = 8;
+	// factor should be 0.0 t/m 1.0
+	double factor = fmod(log2(distance) / log_divisor, 1.0);
+	double hue = 360.0 * factor;
+
+#if DEBUG
+	if (distance <= 10 || (distance % 100 == 0)) {
+		fprintf(stdout, "\ni: %" PRIu32 ": hue: %g\n", distance, hue);
+	}
+#endif
+
+	double saturation = 1.0;
+	double value = 1.0;
+	hsv_s hsv = { hue, saturation, value };
+	rgb_s rgb = { 0x00, 0x00, 0x00 };
+	rgb_from_hsv(&rgb, hsv);
+	rgb24_from_rgb(result, rgb);
 }
 
 typedef struct pixel_buffer {
