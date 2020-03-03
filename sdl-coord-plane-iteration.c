@@ -30,12 +30,6 @@
 #define Make_valgrind_happy 0
 #endif
 
-/*
- sizeof(float):          4 bytes,  32 bits
- sizeof(double):         8 bytes,  64 bits
- sizeof(long double):   16 bytes, 128 bits
-*/
-
 #define die(format, ...) \
 	do { \
 		fprintf(stderr, "%s:%d: ", __FILE__, __LINE__); \
@@ -56,19 +50,26 @@
 		} \
 	} while (0)
 
-typedef struct xy {
+/*
+ on x86_64:
+ sizeof(float):          4 bytes,  32 bits
+ sizeof(double):         8 bytes,  64 bits
+ sizeof(long double):   16 bytes, 128 bits
+*/
+
+typedef struct ldxy {
 	long double x;
 	long double y;
-} xy_s;
+} ldxy_s;
 
 typedef struct iterxy {
-	xy_s seed;
+	ldxy_s seed;
 
 	/* coordinate location */
-	xy_s c;
+	ldxy_s c;
 
 	/* calculated next location */
-	xy_s z;
+	ldxy_s z;
 
 	uint32_t iterations;
 
@@ -81,7 +82,7 @@ static void mandlebrot(iterxy_s *p)
 	if (p->escaped) {
 		return;
 	}
-	xy_s z = p->z;
+	ldxy_s z = p->z;
 	long double escape_radius_squared = (2 * 2);
 	long double x2 = (z.x * z.x);
 	long double y2 = (z.y * z.y);
@@ -114,7 +115,7 @@ static void julia(iterxy_s *p)
 		return;
 	}
 
-	xy_s z = p->z;
+	ldxy_s z = p->z;
 
 	if (p->iterations == 0) {
 		p->z.x = p->c.x;
@@ -155,7 +156,7 @@ static void ordinary_square(iterxy_s *p)
 	if (p->escaped) {
 		return;
 	}
-	xy_s z = p->z;
+	ldxy_s z = p->z;
 	long double escape_radius_squared = (2 * 2);
 	long double x2 = (z.x * z.x);
 	long double y2 = (z.y * z.y);
@@ -175,7 +176,7 @@ static void square_binomial_collapse_y2_add_orig(iterxy_s *p)
 	if (p->escaped) {
 		return;
 	}
-	xy_s z = p->z;
+	ldxy_s z = p->z;
 	long double escape_radius_squared = (2 * 2);
 	long double x2 = (z.x * z.x);
 	long double y2 = (z.y * z.y);
@@ -206,7 +207,7 @@ static void square_binomial_ignore_y2_add_orig(iterxy_s *p)
 	if (p->escaped) {
 		return;
 	}
-	xy_s z = p->z;
+	ldxy_s z = p->z;
 	long double escape_radius_squared = (2 * 2);
 	long double x2 = (z.x * z.x);
 	long double y2 = (z.y * z.y);
@@ -236,7 +237,7 @@ static void not_a_circle(iterxy_s *p)
 	if (p->escaped) {
 		return;
 	}
-	xy_s z = p->z;
+	ldxy_s z = p->z;
 	long double escape_radius_squared = (2 * 2);
 	long double x2 = (z.x * z.x);
 	long double y2 = (z.y * z.y);
@@ -292,7 +293,7 @@ typedef struct coordinate_plane {
 	uint32_t screen_width;
 	uint32_t screen_height;
 
-	xy_s center;
+	ldxy_s center;
 	long double resolution;
 
 	uint32_t iteration_count;
@@ -303,7 +304,7 @@ typedef struct coordinate_plane {
 	uint32_t num_threads;
 
 	size_t pfuncs_idx;
-	xy_s seed;
+	ldxy_s seed;
 
 	iterxy_s *points;
 	size_t len;
@@ -336,9 +337,9 @@ static long double coordinate_plane_y_max(coordinate_plane_s *plane)
 coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
 					   uint32_t screen_width,
 					   uint32_t screen_height,
-					   xy_s center,
+					   ldxy_s center,
 					   long double resolution,
-					   size_t pfuncs_idx, xy_s seed)
+					   size_t pfuncs_idx, ldxy_s seed)
 {
 	plane->screen_width = screen_width;
 	plane->screen_height = screen_height;
@@ -399,10 +400,10 @@ coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
 coordinate_plane_s *coordinate_plane_new(const char *program_name,
 					 uint32_t screen_width,
 					 uint32_t screen_height,
-					 xy_s center,
+					 ldxy_s center,
 					 long double resolution,
 					 size_t pfunc_idx,
-					 xy_s seed,
+					 ldxy_s seed,
 					 uint32_t skip_rounds,
 					 uint32_t num_threads)
 {
@@ -596,8 +597,8 @@ void coordinate_plane_next_function(coordinate_plane_s *plane)
 		new_pfuncs_idx = 0;
 	}
 
-	xy_s center;
-	xy_s seed;
+	ldxy_s center;
+	ldxy_s seed;
 	if (new_pfuncs_idx == pfuncs_julia_idx) {
 		seed = plane->center;
 		center = plane->seed;
@@ -631,7 +632,7 @@ void coordinate_plane_zoom_out(coordinate_plane_s *plane)
 
 void coordinate_plane_pan_left(coordinate_plane_s *plane)
 {
-	xy_s new_center;
+	ldxy_s new_center;
 	new_center.y = plane->center.y;
 
 	long double x_min = coordinate_plane_x_min(plane);
@@ -646,7 +647,7 @@ void coordinate_plane_pan_left(coordinate_plane_s *plane)
 
 void coordinate_plane_pan_right(coordinate_plane_s *plane)
 {
-	xy_s new_center;
+	ldxy_s new_center;
 	new_center.y = plane->center.y;
 
 	long double x_min = coordinate_plane_x_min(plane);
@@ -661,7 +662,7 @@ void coordinate_plane_pan_right(coordinate_plane_s *plane)
 
 void coordinate_plane_pan_up(coordinate_plane_s *plane)
 {
-	xy_s new_center;
+	ldxy_s new_center;
 	new_center.x = plane->center.x;
 
 	long double y_min = coordinate_plane_y_min(plane);
@@ -676,7 +677,7 @@ void coordinate_plane_pan_up(coordinate_plane_s *plane)
 
 void coordinate_plane_pan_down(coordinate_plane_s *plane)
 {
-	xy_s new_center;
+	ldxy_s new_center;
 	new_center.x = plane->center.x;
 
 	long double y_min = coordinate_plane_y_min(plane);
@@ -1322,9 +1323,9 @@ static coordinate_plane_s *coordinate_plane_args(int argc, char **argv)
 		exit(EXIT_SUCCESS);
 	}
 
-	xy_s seed = { options.seed_x, options.seed_y };
+	ldxy_s seed = { options.seed_x, options.seed_y };
 
-	xy_s center = { options.center_x, options.center_y };
+	ldxy_s center = { options.center_x, options.center_y };
 	long double resolution =
 	    (options.x_max - options.x_min) / (1.0 * options.win_width);
 
