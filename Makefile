@@ -37,7 +37,7 @@ tidy:
 		-T sdl_event_context_s -T sdl_texture_buffer_s \
 		-T pixel_buffer_s -T keyboard_key_s -T human_input_s \
 		-T hsv_s -T rgb_s -T rgb24_s \
-		-T xy_s -T iterxy_s \
+		-T ldxy_s -T iterxy_s \
 		-T named_pfunc_s -T pfunc_f \
 		-T coordinate_plane_s -T coordinate_plane_iterate_context_s \
 		-T coord_options_s \

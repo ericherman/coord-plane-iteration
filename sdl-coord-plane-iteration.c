@@ -56,11 +56,30 @@
  sizeof(double):         8 bytes,  64 bits
  sizeof(long double):   16 bytes, 128 bits
 */
-
 typedef struct ldxy {
 	long double x;
 	long double y;
 } ldxy_s;
+
+/* the y is understood to contain an i, the sqrt(-1) */
+static void square_complex(ldxy_s *out, ldxy_s in)
+{
+	assert(out);
+
+	/* generate and combine together the four combos */
+	long double xx = in.x * in.x;	/* no i */
+	long double yx = in.y * in.x;	/* has i */
+	long double xy = in.x * in.y;	/* has i */
+	long double yy = in.y * in.y * -1;	/* loses the i */
+
+	out->x = xx + yy;	/* terms do not contain i */
+	out->y = yx + xy;	/* terms contain an i */
+}
+
+static long double radius_squared(ldxy_s c)
+{
+	return ((c.x * c.x) + (c.y * c.y));
+}
 
 typedef struct iterxy {
 	ldxy_s seed;
@@ -82,31 +101,27 @@ static void mandlebrot(iterxy_s *p)
 	if (p->escaped) {
 		return;
 	}
-	ldxy_s z = p->z;
-	long double escape_radius_squared = (2 * 2);
-	long double x2 = (z.x * z.x);
-	long double y2 = (z.y * z.y);
-	if ((x2 + y2) > escape_radius_squared) {
+
+	if (p->iterations == 0) {
+		p->z.x = 0.0;
+		p->z.y = 0.0;
+	}
+
+	long double escape_radius_squared = (2.0 * 2.0);
+	if (radius_squared(p->z) > escape_radius_squared) {
 		p->escaped = p->iterations;
 		return;
-	} else {
-		/* first, square the complex */
-		/* the y is understood to contain an i, the sqrt(-1) */
-		/* generate and combine together the four combos */
-		long double xx = z.x * z.x;	/* no i */
-		long double yx = z.y * z.x;	/* has i */
-		long double xy = z.x * z.y;	/* has i */
-		long double yy = z.y * z.y * -1;	/* loses the i */
-
-		long double result_x = xx + yy;	/* terms do not contain i */
-		long double result_y = yx + xy;	/* terms contain an i */
-
-		/* then add the original C to the Z[n]^2 result */
-		p->z.x = result_x + p->c.x;
-		p->z.y = result_y + p->c.y;
-
-		++(p->iterations);
 	}
+
+	/* first, square the complex */
+	ldxy_s result;
+	square_complex(&result, p->z);
+
+	/* then add the original C to the Z[n]^2 result */
+	p->z.x = result.x + p->c.x;
+	p->z.y = result.y + p->c.y;
+
+	++(p->iterations);
 }
 
 static void julia(iterxy_s *p)
@@ -115,39 +130,26 @@ static void julia(iterxy_s *p)
 		return;
 	}
 
-	ldxy_s z = p->z;
-
 	if (p->iterations == 0) {
 		p->z.x = p->c.x;
 		p->z.y = p->c.y;
-		++(p->iterations);
-		return;
 	}
 
-	long double escape_radius_squared = (2 * 2);
-	long double x2 = (z.x * z.x);
-	long double y2 = (z.y * z.y);
-	if ((x2 + y2) > escape_radius_squared) {
+	long double escape_radius_squared = (2.0 * 2.0);
+	if (radius_squared(p->z) > escape_radius_squared) {
 		p->escaped = p->iterations;
 		return;
-	} else {
-		/* first, square the complex */
-		/* the y is understood to contain an i, the sqrt(-1) */
-		/* generate and combine together the four combos */
-		long double xx = z.x * z.x;	/* no i */
-		long double yx = z.y * z.x;	/* has i */
-		long double xy = z.x * z.y;	/* has i */
-		long double yy = z.y * z.y * -1;	/* loses the i */
-
-		long double result_x = xx + yy;	/* terms do not contain i */
-		long double result_y = yx + xy;	/* terms contain an i */
-
-		/* then add the seed C to the Z[n]^2 result */
-		p->z.x = result_x + p->seed.x;
-		p->z.y = result_y + p->seed.y;
-
-		++(p->iterations);
 	}
+
+	/* first, square the complex */
+	ldxy_s result;
+	square_complex(&result, p->z);
+
+	/* then add the seed C to the Z[n]^2 result */
+	p->z.x = result.x + p->seed.x;
+	p->z.y = result.y + p->seed.y;
+
+	++(p->iterations);
 }
 
 #ifdef INCLUDE_ALL_FUNCTIONS
@@ -156,18 +158,22 @@ static void ordinary_square(iterxy_s *p)
 	if (p->escaped) {
 		return;
 	}
-	ldxy_s z = p->z;
-	long double escape_radius_squared = (2 * 2);
-	long double x2 = (z.x * z.x);
-	long double y2 = (z.y * z.y);
-	if ((x2 + y2) > escape_radius_squared) {
+
+	if (p->iterations == 0) {
+		p->z.x = p->c.x;
+		p->z.y = p->c.y;
+	}
+
+	long double escape_radius_squared = (2.0 * 2.0);
+	if (radius_squared(p->z) > escape_radius_squared) {
 		p->escaped = p->iterations;
 		return;
-	} else {
-		p->z.y = (z.y == 0) ? p->c.y : y2;
-		p->z.x = (z.x == 0) ? p->c.x : x2;
-		++(p->iterations);
 	}
+
+	p->z.y = p->z.y * p->z.y;
+	p->z.x = p->z.x * p->z.x;
+
+	++(p->iterations);
 }
 
 /* Z[n+1] = collapse_to_y2_to_y((Z[n])^2) + Orig */
@@ -176,29 +182,33 @@ static void square_binomial_collapse_y2_add_orig(iterxy_s *p)
 	if (p->escaped) {
 		return;
 	}
-	ldxy_s z = p->z;
-	long double escape_radius_squared = (2 * 2);
-	long double x2 = (z.x * z.x);
-	long double y2 = (z.y * z.y);
-	if ((x2 + y2) > escape_radius_squared) {
+
+	if (p->iterations == 0) {
+		p->z.x = 0.0;
+		p->z.y = 0.0;
+	}
+
+	long double escape_radius_squared = (2.0 * 2.0);
+	if (radius_squared(p->z) > escape_radius_squared) {
 		p->escaped = p->iterations;
 		return;
-	} else {
-		/* z[n+1] = z[n]^2 + B */
-
-		/* squaring a binomial == adding together four combos */
-		long double xx = p->z.x * p->z.x;
-		long double yx = p->z.y * p->z.x;
-		long double xy = p->z.x * p->z.y;
-		long double yy = p->z.y * p->z.y;
-		long double binomial_x = xx;	/* no y terms */
-		long double collapse_y_and_y2_terms = yx + xy + yy;
-
-		/* now add the original C */
-		p->z.x = binomial_x + p->c.x;
-		p->z.y = collapse_y_and_y2_terms + p->c.y;
-		++(p->iterations);
 	}
+	/* z[n+1] = z[n]^2 + B */
+
+	/* squaring a binomial == adding together four combos */
+	long double xx = p->z.x * p->z.x;
+	long double yx = p->z.y * p->z.x;
+	long double xy = p->z.x * p->z.y;
+	long double yy = p->z.y * p->z.y;
+
+	long double binomial_x = xx;	/* no y terms */
+	long double collapse_y_and_y2_terms = yx + xy + yy;
+
+	/* now add the original C */
+	p->z.x = binomial_x + p->c.x;
+	p->z.y = collapse_y_and_y2_terms + p->c.y;
+
+	++(p->iterations);
 }
 
 /* Z[n+1] = ignore_y2((Z[n])^2) + Orig */
@@ -207,29 +217,32 @@ static void square_binomial_ignore_y2_add_orig(iterxy_s *p)
 	if (p->escaped) {
 		return;
 	}
-	ldxy_s z = p->z;
-	long double escape_radius_squared = (2 * 2);
-	long double x2 = (z.x * z.x);
-	long double y2 = (z.y * z.y);
-	if ((x2 + y2) > escape_radius_squared) {
+
+	if (p->iterations == 0) {
+		p->z.x = 0.0;
+		p->z.y = 0.0;
+	}
+
+	long double escape_radius_squared = (2.0 * 2.0);
+	if (radius_squared(p->z) > escape_radius_squared) {
 		p->escaped = p->iterations;
 		return;
-	} else {
-		/* z[n+1] = z[n]^2 + B */
-
-		/* squaring a binomial == adding together four combos */
-		long double xx = p->z.x * p->z.x;
-		long double yx = p->z.y * p->z.x;
-		long double xy = p->z.x * p->z.y;
-		/*
-		   long double yy = p->z.y * p->z.y;
-		 */
-
-		/* now add the original C */
-		p->z.x = xx + p->c.x;
-		p->z.y = xy + yx + p->c.y;
-		++(p->iterations);
 	}
+	/* z[n+1] = z[n]^2 + B */
+
+	/* squaring a binomial == adding together four combos */
+	long double xx = p->z.x * p->z.x;
+	long double yx = p->z.y * p->z.x;
+	long double xy = p->z.x * p->z.y;
+	/*
+	   long double yy = p->z.y * p->z.y;
+	 */
+
+	/* now add the original C */
+	p->z.x = xx + p->c.x;
+	p->z.y = xy + yx + p->c.y;
+
+	++(p->iterations);
 }
 
 static void not_a_circle(iterxy_s *p)
@@ -237,25 +250,25 @@ static void not_a_circle(iterxy_s *p)
 	if (p->escaped) {
 		return;
 	}
-	ldxy_s z = p->z;
-	long double escape_radius_squared = (2 * 2);
-	long double x2 = (z.x * z.x);
-	long double y2 = (z.y * z.y);
-	if ((x2 + y2) > escape_radius_squared) {
+
+	if (p->iterations == 0) {
+		p->z.x = p->c.x;
+		p->z.y = p->c.y;
+	}
+
+	long double escape_radius_squared = (2.0 * 2.0);
+	if (radius_squared(p->z) > escape_radius_squared) {
 		p->escaped = p->iterations;
 		return;
-	} else {
-		if (p->iterations == 0) {
-			p->z.y = p->c.y;
-			p->z.x = p->c.x;
-		} else {
-			long double xx = p->z.x * p->z.x;
-			long double yy = p->z.y * p->z.y;
-			p->z.y = yy + (0.5 * p->z.x);
-			p->z.x = xx + (0.5 * p->z.y);
-		}
-		++(p->iterations);
 	}
+
+	long double xx = p->z.x * p->z.x;
+	long double yy = p->z.y * p->z.y;
+
+	p->z.y = yy + (0.5 * p->z.x);
+	p->z.x = xx + (0.5 * p->z.y);
+
+	++(p->iterations);
 }
 #endif /* INCLUDE_ALL_FUNCTIONS */
 
@@ -290,8 +303,8 @@ const size_t pfuncs_len = 2;
 typedef struct coordinate_plane {
 	const char *argv0;
 
-	uint32_t screen_width;
-	uint32_t screen_height;
+	uint32_t win_width;
+	uint32_t win_height;
 
 	ldxy_s center;
 	long double resolution;
@@ -312,37 +325,33 @@ typedef struct coordinate_plane {
 
 static long double coordinate_plane_x_min(coordinate_plane_s *plane)
 {
-	return plane->center.x -
-	    (plane->resolution * (plane->screen_width / 2));
+	return plane->center.x - (plane->resolution * (plane->win_width / 2));
 }
 
 static long double coordinate_plane_y_min(coordinate_plane_s *plane)
 {
-	return plane->center.y -
-	    (plane->resolution * (plane->screen_height / 2));
+	return plane->center.y - (plane->resolution * (plane->win_height / 2));
 }
 
 static long double coordinate_plane_x_max(coordinate_plane_s *plane)
 {
-	return plane->center.x +
-	    (plane->resolution * (plane->screen_width / 2));
+	return plane->center.x + (plane->resolution * (plane->win_width / 2));
 }
 
 static long double coordinate_plane_y_max(coordinate_plane_s *plane)
 {
-	return plane->center.y +
-	    (plane->resolution * (plane->screen_height / 2));
+	return plane->center.y + (plane->resolution * (plane->win_height / 2));
 }
 
 coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
-					   uint32_t screen_width,
-					   uint32_t screen_height,
+					   uint32_t win_width,
+					   uint32_t win_height,
 					   ldxy_s center,
 					   long double resolution,
 					   size_t pfuncs_idx, ldxy_s seed)
 {
-	plane->screen_width = screen_width;
-	plane->screen_height = screen_height;
+	plane->win_width = win_width;
+	plane->win_height = win_height;
 	plane->center = center;
 	plane->resolution = resolution;
 	if (!(plane->resolution > 0.0)) {
@@ -350,12 +359,12 @@ coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
 	}
 	plane->iteration_count = 0;
 	plane->escaped = 0;
-	plane->not_escaped = (plane->screen_width * plane->screen_height);
+	plane->not_escaped = (plane->win_width * plane->win_height);
 	plane->pfuncs_idx = pfuncs_idx;
 	/* cache the seed on the plane for reset */
 	plane->seed = seed;
 
-	size_t needed = screen_width * screen_height;
+	size_t needed = win_width * win_height;
 	if (plane->points && (plane->len < needed)) {
 		free(plane->points);
 		plane->points = NULL;
@@ -368,9 +377,9 @@ coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
 
 	long double x_min = coordinate_plane_x_min(plane);
 	long double y_max = coordinate_plane_y_max(plane);
-	for (size_t py = 0; py < plane->screen_height; ++py) {
-		for (size_t px = 0; px < plane->screen_width; ++px) {
-			size_t i = (py * plane->screen_width) + px;
+	for (size_t py = 0; py < plane->win_height; ++py) {
+		for (size_t px = 0; px < plane->win_width; ++px) {
+			size_t i = (py * plane->win_width) + px;
 			iterxy_s *p = plane->points + i;
 
 			p->seed = seed;
@@ -398,8 +407,8 @@ coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
 }
 
 coordinate_plane_s *coordinate_plane_new(const char *program_name,
-					 uint32_t screen_width,
-					 uint32_t screen_height,
+					 uint32_t win_width,
+					 uint32_t win_height,
 					 ldxy_s center,
 					 long double resolution,
 					 size_t pfunc_idx,
@@ -416,7 +425,7 @@ coordinate_plane_s *coordinate_plane_new(const char *program_name,
 	plane->num_threads = num_threads;
 	plane->skip_rounds = skip_rounds;
 
-	coordinate_plane_reset(plane, screen_width, screen_height, center,
+	coordinate_plane_reset(plane, win_width, win_height, center,
 			       resolution, pfunc_idx, seed);
 
 	return plane;
@@ -482,45 +491,33 @@ static int coordinate_plane_iterate_inner(void *void_context)
 {
 	coordinate_plane_iterate_context_s *context = NULL;
 	context = (coordinate_plane_iterate_context_s *)void_context;
+
 	return coordinate_plane_iterate_context(context);
 }
 
 // we don't really need this boiler-plate to be this verbose
-static void die_on_thread_create_failure(int error, size_t our_id)
-{
-	switch (error) {
-	case thrd_success:
-		break;
-	case thrd_nomem:
-		fprintf(stderr, "thrd_create %zu returned thrd_nomem\n",
-			our_id);
-		exit(EXIT_FAILURE);
-		break;
-	case thrd_error:
-		fprintf(stderr, "thrd_create %zu returned thrd_error\n",
-			our_id);
-		exit(EXIT_FAILURE);
-		break;
-	case thrd_timedout:
-		fprintf(stderr,
-			"thrd_create %zu returned unexpected thrd_timedout\n",
-			our_id);
-		exit(EXIT_FAILURE);
-		break;
-	case thrd_busy:
-		fprintf(stderr,
-			"thrd_create %zu returned unexpected thrd_busy\n",
-			our_id);
-		exit(EXIT_FAILURE);
-		break;
-	default:
-		fprintf(stderr,
-			"thrd_create %zu returned unexpected value %d\n",
-			our_id, error);
-		exit(EXIT_FAILURE);
-		break;
-	}
-}
+#define thrd_create_or_die(our_id, thread_id, thread_func, context) do { \
+	int _thrd_err = thrd_create(thread_id, thread_func, context); \
+	switch (_thrd_err) { \
+	case thrd_success: \
+		break; \
+	case thrd_nomem: \
+		die("thrd_create for %zu returned thrd_nomem\n", our_id); \
+		break; \
+	case thrd_error: \
+		die("thrd_create for %zu returned thrd_error\n", our_id); \
+		break; \
+	case thrd_timedout: \
+		die("thrd_create for %zu returned thrd_timedout?\n", our_id); \
+		break; \
+	case thrd_busy: \
+		die("thrd_create for %zu returned thrd_busy?\n", our_id); \
+		break; \
+	default: \
+		die("thrd_create for %zu returned %d?\n", our_id, _thrd_err); \
+		break; \
+	} \
+} while (0)
 
 static void coordinate_plane_iterate_multi_threaded(coordinate_plane_s *plane,
 						    uint32_t steps)
@@ -551,10 +548,7 @@ static void coordinate_plane_iterate_multi_threaded(coordinate_plane_s *plane,
 		thrd_start_t thread_func = &coordinate_plane_iterate_inner;
 		thrd_t *thread_id = &(thread_ids[i]);
 
-		int error = thrd_create(thread_id, thread_func, context);
-		if (error) {
-			die_on_thread_create_failure(error, i);
-		}
+		thrd_create_or_die(i, thread_id, thread_func, context);
 	}
 
 	for (size_t i = 0; i < num_threads; ++i) {
@@ -576,7 +570,7 @@ size_t coordinate_plane_iterate(coordinate_plane_s *plane, uint32_t steps)
 	size_t old_escaped = plane->escaped;
 
 	plane->escaped = 0;
-	plane->not_escaped = plane->len;
+	plane->not_escaped = plane->win_height * plane->win_width;
 
 #ifndef SKIP_THREADS
 	coordinate_plane_iterate_multi_threaded(plane, steps);
@@ -610,14 +604,15 @@ void coordinate_plane_next_function(coordinate_plane_s *plane)
 		seed = plane->seed;
 	}
 
-	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
+	coordinate_plane_reset(plane, plane->win_width, plane->win_height,
 			       center, plane->resolution, new_pfuncs_idx, seed);
 }
 
 void coordinate_plane_zoom_in(coordinate_plane_s *plane)
 {
 	long double new_resolution = plane->resolution * 0.8;
-	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
+
+	coordinate_plane_reset(plane, plane->win_width, plane->win_height,
 			       plane->center, new_resolution,
 			       plane->pfuncs_idx, plane->seed);
 }
@@ -625,7 +620,8 @@ void coordinate_plane_zoom_in(coordinate_plane_s *plane)
 void coordinate_plane_zoom_out(coordinate_plane_s *plane)
 {
 	long double new_resolution = plane->resolution * 1.25;
-	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
+
+	coordinate_plane_reset(plane, plane->win_width, plane->win_height,
 			       plane->center, new_resolution,
 			       plane->pfuncs_idx, plane->seed);
 }
@@ -640,7 +636,7 @@ void coordinate_plane_pan_left(coordinate_plane_s *plane)
 	long double x_span = x_max - x_min;
 	new_center.x = (plane->center.x - (x_span / 8));
 
-	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
+	coordinate_plane_reset(plane, plane->win_width, plane->win_height,
 			       new_center, plane->resolution,
 			       plane->pfuncs_idx, plane->seed);
 }
@@ -655,7 +651,7 @@ void coordinate_plane_pan_right(coordinate_plane_s *plane)
 	long double x_span = x_max - x_min;
 	new_center.x = (plane->center.x + (x_span / 8));
 
-	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
+	coordinate_plane_reset(plane, plane->win_width, plane->win_height,
 			       new_center, plane->resolution,
 			       plane->pfuncs_idx, plane->seed);
 }
@@ -670,7 +666,7 @@ void coordinate_plane_pan_up(coordinate_plane_s *plane)
 	long double y_span = y_max - y_min;
 	new_center.y = (plane->center.y + (y_span / 8));
 
-	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
+	coordinate_plane_reset(plane, plane->win_width, plane->win_height,
 			       new_center, plane->resolution,
 			       plane->pfuncs_idx, plane->seed);
 }
@@ -685,19 +681,20 @@ void coordinate_plane_pan_down(coordinate_plane_s *plane)
 	long double y_span = y_max - y_min;
 	new_center.y = (plane->center.y - (y_span / 8));
 
-	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
+	coordinate_plane_reset(plane, plane->win_width, plane->win_height,
 			       new_center, plane->resolution,
 			       plane->pfuncs_idx, plane->seed);
 }
 
-void coordinate_plane_recenter(coordinate_plane_s *plane, uint32_t x,
-			       uint32_t y)
+void coordinate_plane_recenter(coordinate_plane_s *plane,
+			       uint32_t x, uint32_t y)
 {
-	assert(x < plane->screen_width);
-	assert(y < plane->screen_height);
+	assert(x < plane->win_width);
+	assert(y < plane->win_height);
 
-	iterxy_s *p = plane->points + ((plane->screen_width * y) + x);
-	coordinate_plane_reset(plane, plane->screen_width, plane->screen_height,
+	iterxy_s *p = plane->points + ((plane->win_width * y) + x);
+
+	coordinate_plane_reset(plane, plane->win_width, plane->win_height,
 			       p->c, plane->resolution, plane->pfuncs_idx,
 			       plane->seed);
 }
@@ -859,6 +856,7 @@ typedef struct human_input {
 
 	keyboard_key_s m;
 	keyboard_key_s n;
+
 	keyboard_key_s q;
 	keyboard_key_s space;
 	keyboard_key_s esc;
@@ -872,18 +870,18 @@ typedef struct human_input {
 
 void pixel_buffer_update(coordinate_plane_s *plane, pixel_buffer_s *buf)
 {
-	if (plane->screen_width != buf->width) {
-		die("plane->screen_width:%" PRIu32 " != buf->width: %" PRIu32,
-		    plane->screen_width, buf->width);
+	if (plane->win_width != buf->width) {
+		die("plane->win_width:%" PRIu32 " != buf->width: %" PRIu32,
+		    plane->win_width, buf->width);
 	}
-	if (plane->screen_height != buf->height) {
-		die("plane->screen_height:%" PRIu32 " != buf->height: %" PRIu32,
-		    plane->screen_height, buf->height);
+	if (plane->win_height != buf->height) {
+		die("plane->win_height:%" PRIu32 " != buf->height: %" PRIu32,
+		    plane->win_height, buf->height);
 	}
 
-	for (uint32_t y = 0; y < plane->screen_height; y++) {
-		for (uint32_t x = 0; x < plane->screen_width; x++) {
-			size_t i = (y * plane->screen_width) + x;
+	for (uint32_t y = 0; y < plane->win_height; y++) {
+		for (uint32_t x = 0; x < plane->win_width; x++) {
+			size_t i = (y * plane->win_width) + x;
 			iterxy_s *p = plane->points + i;
 			size_t palette_idx = p->escaped % buf->palette_len;
 			rgb24_s color = buf->palette[palette_idx];
@@ -984,8 +982,8 @@ void print_directions(coordinate_plane_s *plane, FILE *out)
 	long double x_max = coordinate_plane_x_max(plane);
 	fprintf(out, " --from=%.*Lg --to=%.*Lg", DECIMAL_DIG, x_min,
 		DECIMAL_DIG, x_max);
-	fprintf(out, " --width=%" PRIu32, plane->screen_width);
-	fprintf(out, " --height=%" PRIu32, plane->screen_height);
+	fprintf(out, " --width=%" PRIu32, plane->win_width);
+	fprintf(out, " --height=%" PRIu32, plane->win_height);
 	fprintf(out, "\n");
 	long double y_min = coordinate_plane_y_min(plane);
 	long double y_max = coordinate_plane_y_max(plane);
@@ -1011,7 +1009,9 @@ static void *pixel_buffer_resize(pixel_buffer_s *buf, int height, int width)
 	buf->pixels_len = buf->height * buf->width;
 	buf->pitch = buf->width * buf->bytes_per_pixel;
 	size_t size = buf->pixels_len * buf->bytes_per_pixel;
+
 	alloc_or_exit(buf->pixels, size);
+
 	return buf->pixels;
 }
 
@@ -1019,7 +1019,6 @@ static pixel_buffer_s *pixel_buffer_new(uint32_t window_x, uint32_t window_y)
 {
 	pixel_buffer_s *buf = NULL;
 	size_t size = sizeof(pixel_buffer_s);
-
 	alloc_or_exit(buf, size);
 
 	buf->bytes_per_pixel = sizeof(uint32_t);
@@ -1153,7 +1152,7 @@ static void coord_options_rationalize(coord_options_s *options)
 		options->version = 0;
 	}
 	if (options->win_width < 1) {
-		options->win_width = 1024;
+		options->win_width = 800;
 	}
 	if (options->win_height < 1) {
 		options->win_height = ((options->win_width * 3) / 4);
@@ -1224,8 +1223,9 @@ static int coord_options_parse_argv(coord_options_s *options,
 				&option_index);
 
 		/* Detect the end of the options. */
-		if (opt_char == -1)
+		if (opt_char == -1) {
 			break;
+		}
 
 		switch (opt_char) {
 		case 0:
@@ -1318,13 +1318,13 @@ static coordinate_plane_s *coordinate_plane_args(int argc, char **argv)
 		print_help(stdout, argv[0], SDL_COORD_PLANE_ITERATION_VERSION);
 		exit(EXIT_SUCCESS);
 	}
+
 	if (options.version) {
 		fprintf(stdout, "%s\n", SDL_COORD_PLANE_ITERATION_VERSION);
 		exit(EXIT_SUCCESS);
 	}
 
 	ldxy_s seed = { options.seed_x, options.seed_y };
-
 	ldxy_s center = { options.center_x, options.center_y };
 	long double resolution =
 	    (options.x_max - options.x_min) / (1.0 * options.win_width);
@@ -1359,11 +1359,13 @@ static void sdl_resize_texture_buf(SDL_Window *window,
 
 	int height, width;
 	SDL_GetWindowSize(window, &width, &height);
+
 	if (texture_buf->texture && ((width == (int)pixel_buf->width)
 				     && (height == (int)pixel_buf->height))) {
 		/* nothing to do */
 		return;
 	}
+
 	if (texture_buf->texture) {
 		SDL_DestroyTexture(texture_buf->texture);
 	}
@@ -1407,11 +1409,9 @@ static void sdl_blit_texture(SDL_Renderer *renderer,
 static void sdl_process_key_event(sdl_event_context_s *event_ctx,
 				  human_input_s *input)
 {
-	int is_down, was_down;
-
-	is_down = event_ctx->event->key.state == SDL_PRESSED;
-	was_down = ((event_ctx->event->key.repeat != 0)
-		    || (event_ctx->event->key.state == SDL_RELEASED));
+	int is_down = event_ctx->event->key.state == SDL_PRESSED;
+	int was_down = ((event_ctx->event->key.repeat != 0)
+			|| (event_ctx->event->key.state == SDL_RELEASED));
 
 	switch (event_ctx->event->key.keysym.scancode) {
 	case SDL_SCANCODE_ESCAPE:
@@ -1508,7 +1508,6 @@ static void sdl_process_mouse_event(sdl_event_context_s *event_ctx,
 		break;
 	default:
 		break;
-
 	}
 }
 
@@ -1601,8 +1600,8 @@ static int sdl_process_event(sdl_event_context_s *event_ctx,
 	return 0;
 }
 
-rgb24_s *grow_palette(rgb24_s *palette, size_t *len, size_t prefix_black,
-		      size_t amount)
+rgb24_s *grow_palette(rgb24_s *palette, size_t *len,
+		      size_t prefix_black, size_t amount)
 {
 	size_t new_len = (amount + (*len));
 	size_t size = sizeof(rgb24_s) * new_len;
@@ -1630,8 +1629,8 @@ rgb24_s *grow_palette(rgb24_s *palette, size_t *len, size_t prefix_black,
 
 void sdl_coord_plane_iteration(coordinate_plane_s *plane)
 {
-	int window_x = plane->screen_width;
-	int window_y = plane->screen_height;
+	int window_x = plane->win_width;
+	int window_y = plane->win_height;
 
 	Uint32 init_flags = SDL_INIT_VIDEO;
 	if (SDL_Init(init_flags) != 0) {
@@ -1780,14 +1779,13 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane)
 			int fps_printer = 1;	// make configurable?
 			if (fps_printer) {
 				fprintf(stdout,
-					"threads: %" PRIu32 ", iteration: %"
-					PRIu32 ", escaped: %" PRIu64
-					", not escaped: %" PRIu64
-					" (ips: %.f fps: %.f, ipf: %" PRIu32
-					")     \r", plane->num_threads,
+					"i:%" PRIu32 " escaped: %" PRIu64
+					" not: %" PRIu64
+					" (ips: %.f fps: %.f ipf: %" PRIu32
+					" thds: %" PRIu32 ")     \r",
 					plane->iteration_count, plane->escaped,
 					plane->not_escaped, ips, fps,
-					it_per_frame);
+					it_per_frame, plane->num_threads);
 				fflush(stdout);
 			}
 		}
