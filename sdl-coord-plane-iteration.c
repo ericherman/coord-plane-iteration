@@ -98,14 +98,11 @@ typedef struct iterxy {
 /* Z[n+1] = (Z[n])^2 + Orig */
 static void mandlebrot(iterxy_s *p)
 {
-	if (p->escaped) {
-		return;
-	}
-
 	if (p->iterations == 0) {
 		p->z.x = 0.0;
 		p->z.y = 0.0;
 	}
+	++(p->iterations);
 
 	long double escape_radius_squared = (2.0 * 2.0);
 	if (radius_squared(p->z) > escape_radius_squared) {
@@ -120,20 +117,15 @@ static void mandlebrot(iterxy_s *p)
 	/* then add the original C to the Z[n]^2 result */
 	p->z.x = result.x + p->c.x;
 	p->z.y = result.y + p->c.y;
-
-	++(p->iterations);
 }
 
 static void julia(iterxy_s *p)
 {
-	if (p->escaped) {
-		return;
-	}
-
 	if (p->iterations == 0) {
 		p->z.x = p->c.x;
 		p->z.y = p->c.y;
 	}
+	++(p->iterations);
 
 	long double escape_radius_squared = (2.0 * 2.0);
 	if (radius_squared(p->z) > escape_radius_squared) {
@@ -148,21 +140,16 @@ static void julia(iterxy_s *p)
 	/* then add the seed C to the Z[n]^2 result */
 	p->z.x = result.x + p->seed.x;
 	p->z.y = result.y + p->seed.y;
-
-	++(p->iterations);
 }
 
 #ifdef INCLUDE_ALL_FUNCTIONS
 static void ordinary_square(iterxy_s *p)
 {
-	if (p->escaped) {
-		return;
-	}
-
 	if (p->iterations == 0) {
 		p->z.x = p->c.x;
 		p->z.y = p->c.y;
 	}
+	++(p->iterations);
 
 	long double escape_radius_squared = (2.0 * 2.0);
 	if (radius_squared(p->z) > escape_radius_squared) {
@@ -172,21 +159,16 @@ static void ordinary_square(iterxy_s *p)
 
 	p->z.y = p->z.y * p->z.y;
 	p->z.x = p->z.x * p->z.x;
-
-	++(p->iterations);
 }
 
 /* Z[n+1] = collapse_to_y2_to_y((Z[n])^2) + Orig */
 static void square_binomial_collapse_y2_add_orig(iterxy_s *p)
 {
-	if (p->escaped) {
-		return;
-	}
-
 	if (p->iterations == 0) {
 		p->z.x = 0.0;
 		p->z.y = 0.0;
 	}
+	++(p->iterations);
 
 	long double escape_radius_squared = (2.0 * 2.0);
 	if (radius_squared(p->z) > escape_radius_squared) {
@@ -207,21 +189,16 @@ static void square_binomial_collapse_y2_add_orig(iterxy_s *p)
 	/* now add the original C */
 	p->z.x = binomial_x + p->c.x;
 	p->z.y = collapse_y_and_y2_terms + p->c.y;
-
-	++(p->iterations);
 }
 
 /* Z[n+1] = ignore_y2((Z[n])^2) + Orig */
 static void square_binomial_ignore_y2_add_orig(iterxy_s *p)
 {
-	if (p->escaped) {
-		return;
-	}
-
 	if (p->iterations == 0) {
 		p->z.x = 0.0;
 		p->z.y = 0.0;
 	}
+	++(p->iterations);
 
 	long double escape_radius_squared = (2.0 * 2.0);
 	if (radius_squared(p->z) > escape_radius_squared) {
@@ -241,20 +218,15 @@ static void square_binomial_ignore_y2_add_orig(iterxy_s *p)
 	/* now add the original C */
 	p->z.x = xx + p->c.x;
 	p->z.y = xy + yx + p->c.y;
-
-	++(p->iterations);
 }
 
 static void not_a_circle(iterxy_s *p)
 {
-	if (p->escaped) {
-		return;
-	}
-
 	if (p->iterations == 0) {
 		p->z.x = p->c.x;
 		p->z.y = p->c.y;
 	}
+	++(p->iterations);
 
 	long double escape_radius_squared = (2.0 * 2.0);
 	if (radius_squared(p->z) > escape_radius_squared) {
@@ -267,8 +239,6 @@ static void not_a_circle(iterxy_s *p)
 
 	p->z.y = yy + (0.5 * p->z.x);
 	p->z.x = xx + (0.5 * p->z.y);
-
-	++(p->iterations);
 }
 #endif /* INCLUDE_ALL_FUNCTIONS */
 
@@ -456,6 +426,10 @@ static int coordinate_plane_iterate_context(coordinate_plane_iterate_context_s
 	int local_escaped = 0;
 	for (size_t j = ctx->offset; j < plane->len; j += ctx->step_size) {
 		iterxy_s *p = plane->points + j;
+
+		if (p->escaped) {
+			continue;
+		}
 
 		for (size_t i = 0; i < ctx->steps; ++i) {
 			pfunc(p);
