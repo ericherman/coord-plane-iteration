@@ -90,26 +90,38 @@ typedef struct iterxy {
 	/* calculated next location */
 	ldxy_s z;
 
-	uint32_t iterations;
-
 	uint32_t escaped;
 } iterxy_s;
+
+void iterxy_init_zero(iterxy_s *p, ldxy_s xy, ldxy_s seed)
+{
+	p->seed = seed;
+	p->c.x = xy.x;
+	p->c.y = xy.y;
+	p->z.x = 0.0;
+	p->z.y = 0.0;
+	p->escaped = 0;
+}
+
+void iterxy_init_xy(iterxy_s *p, ldxy_s xy, ldxy_s seed)
+{
+	p->seed = seed;
+	p->c.x = xy.x;
+	p->c.y = xy.y;
+	p->z.x = xy.x;
+	p->z.y = xy.y;
+	p->escaped = 0;
+}
+
+bool xy_radius_greater_than_2(ldxy_s xy)
+{
+	long double escape_radius_squared = (2.0 * 2.0);
+	return (radius_squared(xy) > escape_radius_squared) ? true : false;
+}
 
 /* Z[n+1] = (Z[n])^2 + Orig */
 static void mandlebrot(iterxy_s *p)
 {
-	if (p->iterations == 0) {
-		p->z.x = 0.0;
-		p->z.y = 0.0;
-	}
-	++(p->iterations);
-
-	long double escape_radius_squared = (2.0 * 2.0);
-	if (radius_squared(p->z) > escape_radius_squared) {
-		p->escaped = p->iterations;
-		return;
-	}
-
 	/* first, square the complex */
 	ldxy_s result;
 	square_complex(&result, p->z);
@@ -121,18 +133,6 @@ static void mandlebrot(iterxy_s *p)
 
 static void julia(iterxy_s *p)
 {
-	if (p->iterations == 0) {
-		p->z.x = p->c.x;
-		p->z.y = p->c.y;
-	}
-	++(p->iterations);
-
-	long double escape_radius_squared = (2.0 * 2.0);
-	if (radius_squared(p->z) > escape_radius_squared) {
-		p->escaped = p->iterations;
-		return;
-	}
-
 	/* first, square the complex */
 	ldxy_s result;
 	square_complex(&result, p->z);
@@ -145,18 +145,6 @@ static void julia(iterxy_s *p)
 #ifdef INCLUDE_ALL_FUNCTIONS
 static void ordinary_square(iterxy_s *p)
 {
-	if (p->iterations == 0) {
-		p->z.x = p->c.x;
-		p->z.y = p->c.y;
-	}
-	++(p->iterations);
-
-	long double escape_radius_squared = (2.0 * 2.0);
-	if (radius_squared(p->z) > escape_radius_squared) {
-		p->escaped = p->iterations;
-		return;
-	}
-
 	p->z.y = p->z.y * p->z.y;
 	p->z.x = p->z.x * p->z.x;
 }
@@ -164,17 +152,6 @@ static void ordinary_square(iterxy_s *p)
 /* Z[n+1] = collapse_to_y2_to_y((Z[n])^2) + Orig */
 static void square_binomial_collapse_y2_add_orig(iterxy_s *p)
 {
-	if (p->iterations == 0) {
-		p->z.x = 0.0;
-		p->z.y = 0.0;
-	}
-	++(p->iterations);
-
-	long double escape_radius_squared = (2.0 * 2.0);
-	if (radius_squared(p->z) > escape_radius_squared) {
-		p->escaped = p->iterations;
-		return;
-	}
 	/* z[n+1] = z[n]^2 + B */
 
 	/* squaring a binomial == adding together four combos */
@@ -194,17 +171,6 @@ static void square_binomial_collapse_y2_add_orig(iterxy_s *p)
 /* Z[n+1] = ignore_y2((Z[n])^2) + Orig */
 static void square_binomial_ignore_y2_add_orig(iterxy_s *p)
 {
-	if (p->iterations == 0) {
-		p->z.x = 0.0;
-		p->z.y = 0.0;
-	}
-	++(p->iterations);
-
-	long double escape_radius_squared = (2.0 * 2.0);
-	if (radius_squared(p->z) > escape_radius_squared) {
-		p->escaped = p->iterations;
-		return;
-	}
 	/* z[n+1] = z[n]^2 + B */
 
 	/* squaring a binomial == adding together four combos */
@@ -222,18 +188,6 @@ static void square_binomial_ignore_y2_add_orig(iterxy_s *p)
 
 static void not_a_circle(iterxy_s *p)
 {
-	if (p->iterations == 0) {
-		p->z.x = p->c.x;
-		p->z.y = p->c.y;
-	}
-	++(p->iterations);
-
-	long double escape_radius_squared = (2.0 * 2.0);
-	if (radius_squared(p->z) > escape_radius_squared) {
-		p->escaped = p->iterations;
-		return;
-	}
-
 	long double xx = p->z.x * p->z.x;
 	long double yy = p->z.y * p->z.y;
 
@@ -242,9 +196,13 @@ static void not_a_circle(iterxy_s *p)
 }
 #endif /* INCLUDE_ALL_FUNCTIONS */
 
+typedef void (*pfunc_init_f)(iterxy_s *p, ldxy_s xy, ldxy_s seed);
 typedef void (*pfunc_f)(iterxy_s *p);
+typedef bool (*pfunc_escape_f)(ldxy_s xy);
 
 typedef struct named_pfunc {
+	pfunc_init_f pfunc_init;
+	pfunc_escape_f pfunc_escape;
 	pfunc_f pfunc;
 	const char *name;
 } named_pfunc_s;
@@ -252,14 +210,19 @@ typedef struct named_pfunc {
 #define pfuncs_mandlebrot_idx	0U
 #define pfuncs_julia_idx	(pfuncs_mandlebrot_idx + 1U)
 named_pfunc_s pfuncs[] = {
-	{ mandlebrot, "mandlebrot" },
-	{ julia, "julia" },
+	{ iterxy_init_zero, xy_radius_greater_than_2, mandlebrot,
+	 "mandlebrot" },
+	{ iterxy_init_xy, xy_radius_greater_than_2, julia, "julia" },
 #ifdef INCLUDE_ALL_FUNCTIONS
-	{ ordinary_square, "ordinary_square" },
-	{ not_a_circle, "not_a_circle" },
-	{ square_binomial_collapse_y2_add_orig,
+	{ iterxy_init_xy, xy_radius_greater_than_2, ordinary_square,
+	 "ordinary_square" },
+	{ iterxy_init_xy, xy_radius_greater_than_2, not_a_circle,
+	 "not_a_circle" },
+	{ iterxy_init_zero, xy_radius_greater_than_2,
+	 square_binomial_collapse_y2_add_orig,
 	 "square_binomial_collapse_y2_add_orig," },
-	{ square_binomial_ignore_y2_add_orig,
+	{ iterxy_init_zero, xy_radius_greater_than_2,
+	 square_binomial_ignore_y2_add_orig,
 	 "square_binomial_ignore_y2_add_orig," }
 #endif /* INCLUDE_ALL_FUNCTIONS */
 };
@@ -345,32 +308,30 @@ coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
 		alloc_or_exit(plane->points, size);
 	}
 
+	pfunc_init_f pfunc_init = pfuncs[plane->pfuncs_idx].pfunc_init;
 	long double x_min = coordinate_plane_x_min(plane);
 	long double y_max = coordinate_plane_y_max(plane);
 	for (size_t py = 0; py < plane->win_height; ++py) {
 		for (size_t px = 0; px < plane->win_width; ++px) {
 			size_t i = (py * plane->win_width) + px;
+
 			iterxy_s *p = plane->points + i;
 
-			p->seed = seed;
-
 			/* location on the co-ordinate plane */
-			p->c.y = y_max - (py * plane->resolution);
-			if (fabsl(p->c.y) < (plane->resolution / 2)) {
+			ldxy_s xy;
+			xy.y = y_max - (py * plane->resolution);
+			if (fabsl(xy.y) < (plane->resolution / 2)) {
 				/* near enought to zero to call it zero */
-				p->c.y = 0.0;
+				xy.y = 0.0;
 			}
 
-			p->c.x = x_min + px * plane->resolution;
-			if (fabsl(p->c.x) < (plane->resolution / 2)) {
+			xy.x = x_min + px * plane->resolution;
+			if (fabsl(xy.x) < (plane->resolution / 2)) {
 				/* near enought to zero to call it zero */
-				p->c.x = 0.0;
+				xy.x = 0.0;
 			}
 
-			p->z.y = 0;
-			p->z.x = 0;
-			p->iterations = 0;
-			p->escaped = 0;
+			pfunc_init(p, xy, seed);
 		}
 	}
 	return plane;
@@ -422,16 +383,19 @@ static int coordinate_plane_iterate_context(coordinate_plane_iterate_context_s
 	coordinate_plane_s *plane = ctx->plane;
 
 	pfunc_f pfunc = pfuncs[plane->pfuncs_idx].pfunc;
+	pfunc_escape_f pfunc_escape = pfuncs[plane->pfuncs_idx].pfunc_escape;
 
 	int local_escaped = 0;
 	for (size_t j = ctx->offset; j < plane->len; j += ctx->step_size) {
 		iterxy_s *p = plane->points + j;
 
-		if (p->escaped) {
-			continue;
-		}
+		for (size_t i = 0; i < ctx->steps && !p->escaped; ++i) {
 
-		for (size_t i = 0; i < ctx->steps; ++i) {
+			if (pfunc_escape(p->z)) {
+				p->escaped = plane->iteration_count + i + 1;
+				continue;
+			}
+
 			pfunc(p);
 		}
 
