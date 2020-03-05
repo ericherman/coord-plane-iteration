@@ -76,11 +76,6 @@ static void square_complex(ldxy_s *out, ldxy_s in)
 	out->y = yx + xy;	/* terms contain an i */
 }
 
-static long double radius_squared(ldxy_s c)
-{
-	return ((c.x * c.x) + (c.y * c.y));
-}
-
 typedef struct iterxy {
 	ldxy_s seed;
 
@@ -93,7 +88,7 @@ typedef struct iterxy {
 	uint32_t escaped;
 } iterxy_s;
 
-void iterxy_init_zero(iterxy_s *p, ldxy_s xy, ldxy_s seed)
+static void iterxy_init_zero(iterxy_s *p, ldxy_s xy, ldxy_s seed)
 {
 	p->seed = seed;
 	p->c.x = xy.x;
@@ -103,7 +98,7 @@ void iterxy_init_zero(iterxy_s *p, ldxy_s xy, ldxy_s seed)
 	p->escaped = 0;
 }
 
-void iterxy_init_xy(iterxy_s *p, ldxy_s xy, ldxy_s seed)
+static void iterxy_init_xy(iterxy_s *p, ldxy_s xy, ldxy_s seed)
 {
 	p->seed = seed;
 	p->c.x = xy.x;
@@ -113,7 +108,12 @@ void iterxy_init_xy(iterxy_s *p, ldxy_s xy, ldxy_s seed)
 	p->escaped = 0;
 }
 
-bool xy_radius_greater_than_2(ldxy_s xy)
+static long double radius_squared(ldxy_s c)
+{
+	return ((c.x * c.x) + (c.y * c.y));
+}
+
+static bool xy_radius_greater_than_2(ldxy_s xy)
 {
 	long double escape_radius_squared = (2.0 * 2.0);
 	return (radius_squared(xy) > escape_radius_squared) ? true : false;
@@ -368,6 +368,17 @@ void coordinate_plane_free(coordinate_plane_s *plane)
 		free(plane->points);
 	}
 	free(plane);
+}
+
+void coordinate_plane_resize(coordinate_plane_s *plane, uint32_t new_win_width,
+			     uint32_t new_win_height)
+{
+	long double x_min = coordinate_plane_x_min(plane);
+	long double x_max = coordinate_plane_x_max(plane);
+	long double new_resolution = (x_max - x_min) / (1.0 * new_win_width);
+	coordinate_plane_reset(plane, new_win_width, new_win_height,
+			       plane->center, new_resolution, plane->pfuncs_idx,
+			       plane->seed);
 }
 
 typedef struct coordinate_plane_iterate_context {
@@ -674,14 +685,14 @@ static bool invalid_hsv_s(hsv_s hsv)
 }
 #endif
 
-static void rgb24_from_rgb(rgb24_s *out, rgb_s in)
+void rgb24_from_rgb(rgb24_s *out, rgb_s in)
 {
 	out->red = 255 * in.red;
 	out->green = 255 * in.green;
 	out->blue = 255 * in.blue;
 }
 
-static uint32_t rgb24_to_uint(rgb24_s rgb)
+uint32_t rgb24_to_uint32(rgb24_s rgb)
 {
 	uint32_t urgb = ((rgb.red << 16) + (rgb.green << 8) + rgb.blue);
 	return urgb;
@@ -689,7 +700,7 @@ static uint32_t rgb24_to_uint(rgb24_s rgb)
 
 // https://dystopiancode.blogspot.com/2012/06/hsv-rgb-conversion-algorithms-in-c.html
 // https://en.wikipedia.org/wiki/HSL_and_HSV
-static bool rgb_from_hsv(rgb_s *rgb, hsv_s hsv)
+bool rgb_from_hsv(rgb_s *rgb, hsv_s hsv)
 {
 #ifndef NDEBUG
 	if (!rgb || invalid_hsv_s(hsv)) {
@@ -756,18 +767,6 @@ static void long_tail_gradiant(rgb24_s *result, uint32_t distance)
 	rgb24_from_rgb(result, rgb);
 }
 
-typedef struct pixel_buffer {
-	uint32_t width;
-	uint32_t height;
-	uint8_t bytes_per_pixel;
-	size_t pixels_len;
-	/* pitch is bytes in a row of pixel data, including padding */
-	uint32_t pitch;
-	uint32_t *pixels;
-	rgb24_s *palette;
-	size_t palette_len;
-} pixel_buffer_s;
-
 typedef struct keyboard_key {
 	uint32_t is_down:1;
 	uint32_t was_down:1;
@@ -806,27 +805,64 @@ typedef struct human_input {
 	int wheel_zoom;
 } human_input_s;
 
-void pixel_buffer_update(coordinate_plane_s *plane, pixel_buffer_s *buf)
+void human_input_init(human_input_s *input)
 {
-	if (plane->win_width != buf->width) {
-		die("plane->win_width:%" PRIu32 " != buf->width: %" PRIu32,
-		    plane->win_width, buf->width);
-	}
-	if (plane->win_height != buf->height) {
-		die("plane->win_height:%" PRIu32 " != buf->height: %" PRIu32,
-		    plane->win_height, buf->height);
-	}
+	input->up.is_down = 0;
+	input->up.was_down = 0;
 
-	for (uint32_t y = 0; y < plane->win_height; y++) {
-		for (uint32_t x = 0; x < plane->win_width; x++) {
-			size_t i = (y * plane->win_width) + x;
-			iterxy_s *p = plane->points + i;
-			size_t palette_idx = p->escaped % buf->palette_len;
-			rgb24_s color = buf->palette[palette_idx];
-			uint32_t foreground = rgb24_to_uint(color);
-			*(buf->pixels + (y * buf->width) + x) = foreground;
-		}
-	}
+	input->w.is_down = 0;
+	input->w.was_down = 0;
+
+	input->left.is_down = 0;
+	input->left.was_down = 0;
+
+	input->a.is_down = 0;
+	input->a.was_down = 0;
+
+	input->down.is_down = 0;
+	input->down.was_down = 0;
+
+	input->s.is_down = 0;
+	input->s.was_down = 0;
+
+	input->right.is_down = 0;
+	input->right.was_down = 0;
+
+	input->d.is_down = 0;
+	input->d.was_down = 0;
+
+	input->page_down.is_down = 0;
+	input->page_down.was_down = 0;
+
+	input->z.is_down = 0;
+	input->z.was_down = 0;
+
+	input->page_up.is_down = 0;
+	input->page_up.was_down = 0;
+
+	input->x.is_down = 0;
+	input->x.was_down = 0;
+
+	input->m.is_down = 0;
+	input->m.was_down = 0;
+
+	input->n.is_down = 0;
+	input->n.was_down = 0;
+
+	input->q.is_down = 0;
+	input->q.was_down = 0;
+
+	input->space.is_down = 0;
+	input->space.was_down = 0;
+
+	input->esc.is_down = 0;
+	input->esc.was_down = 0;
+
+	input->click = 0;
+	input->click_x = 0;
+	input->click_y = 0;
+
+	input->wheel_zoom = 0;
 }
 
 enum coordinate_plane_change {
@@ -937,7 +973,42 @@ void print_directions(coordinate_plane_s *plane, FILE *out)
 	fflush(out);
 }
 
-static void *pixel_buffer_resize(pixel_buffer_s *buf, int height, int width)
+typedef struct pixel_buffer {
+	uint32_t width;
+	uint32_t height;
+	uint8_t bytes_per_pixel;
+	size_t pixels_len;
+	/* pitch is bytes in a row of pixel data, including padding */
+	uint32_t pitch;
+	uint32_t *pixels;
+	rgb24_s *palette;
+	size_t palette_len;
+} pixel_buffer_s;
+
+void pixel_buffer_update(coordinate_plane_s *plane, pixel_buffer_s *buf)
+{
+	if (plane->win_width != buf->width) {
+		die("plane->win_width:%" PRIu32 " != buf->width: %" PRIu32,
+		    plane->win_width, buf->width);
+	}
+	if (plane->win_height != buf->height) {
+		die("plane->win_height:%" PRIu32 " != buf->height: %" PRIu32,
+		    plane->win_height, buf->height);
+	}
+
+	for (uint32_t y = 0; y < plane->win_height; y++) {
+		for (uint32_t x = 0; x < plane->win_width; x++) {
+			size_t i = (y * plane->win_width) + x;
+			iterxy_s *p = plane->points + i;
+			size_t palette_idx = p->escaped % buf->palette_len;
+			rgb24_s color = buf->palette[palette_idx];
+			uint32_t foreground = rgb24_to_uint32(color);
+			*(buf->pixels + (y * buf->width) + x) = foreground;
+		}
+	}
+}
+
+void *pixel_buffer_resize(pixel_buffer_s *buf, int height, int width)
 {
 	if (buf->pixels) {
 		free(buf->pixels);
@@ -953,7 +1024,35 @@ static void *pixel_buffer_resize(pixel_buffer_s *buf, int height, int width)
 	return buf->pixels;
 }
 
-static pixel_buffer_s *pixel_buffer_new(uint32_t window_x, uint32_t window_y)
+static rgb24_s *grow_palette(rgb24_s *palette, size_t *len,
+			     size_t prefix_black, size_t amount)
+{
+	size_t new_len = (amount + (*len));
+	size_t size = sizeof(rgb24_s) * new_len;
+	rgb24_s *grow = realloc(palette, size);
+	if (!grow) {
+		fprintf(stderr,
+			"could not allocate %zu bytes for palette[%zu]?",
+			size, new_len);
+		return palette;
+	}
+	palette = grow;
+	size_t keep = *len;
+	*len = new_len;
+	for (size_t i = keep; i < prefix_black; ++i) {
+		palette[i].red = 0;
+		palette[i].green = 0;
+		palette[i].blue = 0;
+	}
+	keep = keep >= prefix_black ? keep : prefix_black;
+	for (size_t i = keep; i < new_len; ++i) {
+		long_tail_gradiant(palette + i, i);
+	}
+	return palette;
+}
+
+pixel_buffer_s *pixel_buffer_new(uint32_t window_x, uint32_t window_y,
+				 size_t palette_len, size_t skip_rounds)
 {
 	pixel_buffer_s *buf = NULL;
 	size_t size = sizeof(pixel_buffer_s);
@@ -964,6 +1063,14 @@ static pixel_buffer_s *pixel_buffer_new(uint32_t window_x, uint32_t window_y)
 
 	buf->palette = NULL;
 	buf->palette_len = 0;
+
+	buf->palette =
+	    grow_palette(buf->palette, &buf->palette_len, skip_rounds,
+			 palette_len);
+	if (!buf->palette) {
+		size_t size = sizeof(rgb24_s) * palette_len;
+		die("palette == NULL? (size %zu)", size);
+	}
 
 	return buf;
 }
@@ -976,76 +1083,6 @@ void pixel_buffer_free(pixel_buffer_s *buf)
 	free(buf->palette);
 	free(buf->pixels);
 	free(buf);
-}
-
-static uint64_t time_in_usec(void)
-{
-	struct timeval tv = { 0, 0 };
-	struct timezone *tz = NULL;
-	gettimeofday(&tv, tz);
-	uint64_t usec_per_sec = (1000 * 1000);
-	uint64_t time_in_micros = (usec_per_sec * tv.tv_sec) + tv.tv_usec;
-	return time_in_micros;
-}
-
-void human_input_init(human_input_s *input)
-{
-	input->up.is_down = 0;
-	input->up.was_down = 0;
-
-	input->w.is_down = 0;
-	input->w.was_down = 0;
-
-	input->left.is_down = 0;
-	input->left.was_down = 0;
-
-	input->a.is_down = 0;
-	input->a.was_down = 0;
-
-	input->down.is_down = 0;
-	input->down.was_down = 0;
-
-	input->s.is_down = 0;
-	input->s.was_down = 0;
-
-	input->right.is_down = 0;
-	input->right.was_down = 0;
-
-	input->d.is_down = 0;
-	input->d.was_down = 0;
-
-	input->page_down.is_down = 0;
-	input->page_down.was_down = 0;
-
-	input->z.is_down = 0;
-	input->z.was_down = 0;
-
-	input->page_up.is_down = 0;
-	input->page_up.was_down = 0;
-
-	input->x.is_down = 0;
-	input->x.was_down = 0;
-
-	input->m.is_down = 0;
-	input->m.was_down = 0;
-
-	input->n.is_down = 0;
-	input->n.was_down = 0;
-
-	input->q.is_down = 0;
-	input->q.was_down = 0;
-
-	input->space.is_down = 0;
-	input->space.was_down = 0;
-
-	input->esc.is_down = 0;
-	input->esc.was_down = 0;
-
-	input->click = 0;
-	input->click_x = 0;
-	input->click_y = 0;
-
-	input->wheel_zoom = 0;
 }
 
 typedef struct coord_options {
@@ -1245,7 +1282,7 @@ static void print_help(FILE *out, const char *argv0, const char *version)
 	fprintf(out, "\t-h --help          This message and exit\n");
 }
 
-static coordinate_plane_s *coordinate_plane_args(int argc, char **argv)
+coordinate_plane_s *coordinate_plane_new_from_args(int argc, char **argv)
 {
 	coord_options_s options;
 	coord_options_init(&options);
@@ -1275,6 +1312,16 @@ static coordinate_plane_s *coordinate_plane_args(int argc, char **argv)
 	return plane;
 }
 
+uint64_t time_in_usec(void)
+{
+	struct timeval tv = { 0, 0 };
+	struct timezone *tz = NULL;
+	gettimeofday(&tv, tz);
+	uint64_t usec_per_sec = (1000 * 1000);
+	uint64_t time_in_micros = (usec_per_sec * tv.tv_sec) + tv.tv_usec;
+	return time_in_micros;
+}
+
 typedef struct sdl_texture_buffer {
 	SDL_Texture *texture;
 	pixel_buffer_s *pixel_buf;
@@ -1286,7 +1333,7 @@ typedef struct sdl_event_context {
 	Uint32 win_id;
 	SDL_Renderer *renderer;
 	SDL_Event *event;
-	int resized;
+	bool resized;
 } sdl_event_context_s;
 
 static void sdl_resize_texture_buf(SDL_Window *window,
@@ -1492,7 +1539,7 @@ static int sdl_process_event(sdl_event_context_s *event_ctx,
 			sdl_resize_texture_buf(event_ctx->window,
 					       event_ctx->renderer,
 					       event_ctx->texture_buf);
-			event_ctx->resized = 1;
+			event_ctx->resized = true;
 			break;
 		case SDL_WINDOWEVENT_SIZE_CHANGED:
 			/* either as a result of an API call */
@@ -1538,34 +1585,8 @@ static int sdl_process_event(sdl_event_context_s *event_ctx,
 	return 0;
 }
 
-rgb24_s *grow_palette(rgb24_s *palette, size_t *len,
-		      size_t prefix_black, size_t amount)
-{
-	size_t new_len = (amount + (*len));
-	size_t size = sizeof(rgb24_s) * new_len;
-	rgb24_s *grow = realloc(palette, size);
-	if (!grow) {
-		fprintf(stderr,
-			"could not allocate %zu bytes for palette[%zu]?",
-			size, new_len);
-		return palette;
-	}
-	palette = grow;
-	size_t keep = *len;
-	*len = new_len;
-	for (size_t i = keep; i < prefix_black; ++i) {
-		palette[i].red = 0;
-		palette[i].green = 0;
-		palette[i].blue = 0;
-	}
-	keep = keep >= prefix_black ? keep : prefix_black;
-	for (size_t i = keep; i < new_len; ++i) {
-		long_tail_gradiant(palette + i, i);
-	}
-	return palette;
-}
-
-void sdl_coord_plane_iteration(coordinate_plane_s *plane)
+void sdl_coord_plane_iteration(coordinate_plane_s *plane,
+			       pixel_buffer_s *virtual_win)
 {
 	int window_x = plane->win_width;
 	int window_y = plane->win_height;
@@ -1574,16 +1595,6 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane)
 	if (SDL_Init(init_flags) != 0) {
 		die("Could not SDL_Init(%lu) (%s)", (uint64_t)init_flags,
 		    SDL_GetError());
-	}
-
-	pixel_buffer_s *virtual_win = pixel_buffer_new(window_x, window_y);
-	size_t new_palette_len = 1024;
-	virtual_win->palette =
-	    grow_palette(virtual_win->palette, &virtual_win->palette_len,
-			 plane->skip_rounds, new_palette_len);
-	if (!virtual_win->palette) {
-		size_t size = sizeof(rgb24_s) * new_palette_len;
-		die("palette == NULL? (size %zu)", size);
 	}
 
 	sdl_texture_buffer_s texture_buf;
@@ -1619,7 +1630,7 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane)
 	event_ctx.renderer = renderer;
 	event_ctx.window = window;
 	event_ctx.win_id = SDL_GetWindowID(window);
-	event_ctx.resized = 0;
+	event_ctx.resized = false;
 
 	uint32_t it_per_frame = 1;
 	uint64_t usec_per_sec = (1000 * 1000);
@@ -1660,15 +1671,9 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane)
 		}
 		if (event_ctx.resized) {
 			SDL_GetWindowSize(window, &window_x, &window_y);
-			long double x_min = coordinate_plane_x_min(plane);
-			long double x_max = coordinate_plane_x_max(plane);
-			long double resolution =
-			    (x_max - x_min) / (1.0 * window_x);
-			coordinate_plane_reset(plane, window_x, window_y,
-					       plane->center, resolution,
-					       plane->pfuncs_idx, plane->seed);
+			coordinate_plane_resize(plane, window_x, window_y);
 			change = coordinate_plane_change_yes;
-			event_ctx.resized = 0;
+			event_ctx.resized = false;
 		}
 		if (change == coordinate_plane_change_yes) {
 			iterations_at_last_print = 0;
@@ -1683,6 +1688,7 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane)
 
 		coordinate_plane_iterate(plane, it_per_frame);
 		pixel_buffer_update(plane, virtual_win);
+
 		sdl_blit_texture(renderer, &texture_buf);
 		++frame_count;
 		++frames_since_print;
@@ -1739,20 +1745,23 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane)
 		SDL_DestroyRenderer(renderer);
 		SDL_DestroyWindow(window);
 		SDL_Quit();
-
-		/* then collect our own garbage */
-		pixel_buffer_free(virtual_win);
 	}
 }
 
 int main(int argc, char **argv)
 {
 
-	coordinate_plane_s *plane = coordinate_plane_args(argc, argv);
+	coordinate_plane_s *plane = coordinate_plane_new_from_args(argc, argv);
 
-	sdl_coord_plane_iteration(plane);
+	size_t palette_len = 1024;
+	pixel_buffer_s *virtual_win =
+	    pixel_buffer_new(plane->win_width, plane->win_height, palette_len,
+			     plane->skip_rounds);
+
+	sdl_coord_plane_iteration(plane, virtual_win);
 
 	if (Make_valgrind_happy) {
+		pixel_buffer_free(virtual_win);
 		coordinate_plane_free(plane);
 	}
 }
