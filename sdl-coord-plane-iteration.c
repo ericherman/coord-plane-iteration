@@ -13,10 +13,13 @@
 #define SDL_COORD_PLANE_ITERATION_VERSION "0.1.0"
 
 #include <assert.h>
+#include <execinfo.h>
 #include <float.h>
 #include <getopt.h>
 #include <inttypes.h>
 #include <math.h>
+#include <signal.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -36,16 +39,26 @@
 #define Make_valgrind_happy 0
 #endif
 
-#define die(format, ...) \
+#ifndef logerror
+#define logerror(format, ...) \
 	do { \
 		fprintf(stderr, "%s:%d: ", __FILE__, __LINE__); \
 		/* fprintf(stderr, format __VA_OPT__(,) __VA_ARGS__); */ \
 		/* fprintf(stderr, format, ##_VA_ARGS__); */ \
 		fprintf(stderr, format, __VA_ARGS__); \
 		fprintf(stderr, "\n"); \
+	} while (0)
+#endif
+
+#ifndef die
+#define die(format, ...) \
+	do { \
+		logerror(format, __VA_ARGS__); \
 		exit(EXIT_FAILURE); \
 	} while (0)
+#endif
 
+#ifndef alloc_or_exit
 #define alloc_or_exit(ptr, size) \
 	do { \
 		size_t _alloc_or_exit_size_t = (size_t)(size); \
@@ -55,6 +68,33 @@
 					_alloc_or_exit_size_t, #ptr); \
 		} \
 	} while (0)
+#endif
+
+/* Thread command, check return code, and whine if not success */
+#ifndef Tc
+#define Tc(thrd_call, our_id) do { \
+	int _thrd_err = (thrd_call); \
+	switch (_thrd_err) { \
+	case thrd_success: \
+		break; \
+	case thrd_nomem: \
+		logerror("%s for %zu: thrd_nomem", #thrd_call, our_id); \
+		break; \
+	case thrd_error: \
+		logerror("%s for %zu: thrd_error", #thrd_call, our_id); \
+		break; \
+	case thrd_timedout: \
+		logerror("%s for %zu: thrd_timedout", #thrd_call, our_id); \
+		break; \
+	case thrd_busy: \
+		logerror("%s for %zu: thrd_busy", #thrd_call, our_id); \
+		break; \
+	default: \
+		logerror("%s for %zu: %d?", #thrd_call, our_id, _thrd_err); \
+		break; \
+	} \
+} while (0)
+#endif
 
 /*
  on x86_64:
@@ -239,6 +279,222 @@ const size_t pfuncs_len = 5;
 const size_t pfuncs_len = 2;
 #endif /* INCLUDE_ALL_FUNCTIONS */
 
+#ifndef SKIP_THREADS
+struct thread_pool;
+typedef struct thread_pool thread_pool_s;
+
+typedef struct thread_pool_todo {
+	struct thread_pool_todo *next;
+	thrd_start_t func;
+	void *arg;
+} thread_pool_todo_s;
+
+typedef struct thread_pool_loop_context {
+	size_t id;
+	thread_pool_s *pool;
+} thread_pool_loop_context_s;
+
+struct thread_pool {
+	mtx_t *mutex;
+	cnd_t *todo;
+	cnd_t *done;
+	atomic_bool stop;
+	thrd_t *threads;
+	thread_pool_loop_context_s *thread_contexts;
+	size_t threads_len;
+	size_t num_working;
+	thread_pool_todo_s *first;
+	thread_pool_todo_s *last;
+};
+
+static int thread_pool_loop(void *arg)
+{
+	thread_pool_loop_context_s *ctx = arg;
+	size_t id = ctx->id;
+	thread_pool_s *pool = ctx->pool;
+
+	while (true) {
+		Tc(mtx_lock(pool->mutex), id);
+		while (!pool->stop && pool->first == NULL) {
+			Tc(cnd_wait(pool->todo, pool->mutex), id);
+		}
+		if (pool->stop) {
+			Tc(cnd_broadcast(pool->done), id);
+			Tc(mtx_unlock(pool->mutex), id);
+			break;
+		}
+
+		if (pool->first != NULL) {
+			thread_pool_todo_s *elem = pool->first;
+			pool->first = elem->next;
+			++(pool->num_working);
+			Tc(mtx_unlock(pool->mutex), id);
+
+			if (elem != NULL) {
+				void *arg = elem->arg;
+				thrd_start_t func = elem->func;
+				free(elem);
+				func(arg);
+			}
+
+			Tc(mtx_lock(pool->mutex), id);
+			--(pool->num_working);
+			Tc(cnd_broadcast(pool->done), id);
+		}
+		Tc(mtx_unlock(pool->mutex), id);
+		thrd_yield();
+	}
+	return 0;
+}
+
+void thread_pool_init(thread_pool_s *pool, size_t num_threads)
+{
+	assert(pool);
+	assert(num_threads);
+
+	pool->first = NULL;
+	pool->last = NULL;
+	pool->num_working = 0;
+	pool->stop = false;
+
+	size_t id = 0;
+	int err = 0;
+
+	alloc_or_exit(pool->mutex, sizeof(mtx_t));
+	Tc((err = mtx_init(pool->mutex, mtx_plain)), id);
+	if (err) {
+		die("could not mtx_init(%s, %d)\n", "pool->mutex", mtx_plain);
+	}
+
+	alloc_or_exit(pool->todo, sizeof(cnd_t));
+	Tc((err = cnd_init(pool->todo)), id);
+	if (err) {
+		die("could not cnd_init(%s)\n", "pool->todo");
+	}
+
+	alloc_or_exit(pool->done, sizeof(cnd_t));
+	Tc((err = cnd_init(pool->done)), id);
+	if (err) {
+		die("could not cnd_init(%s)\n", "pool->done");
+	}
+
+	size_t size = sizeof(thrd_t) * num_threads;
+	alloc_or_exit(pool->threads, size);
+
+	size = sizeof(thread_pool_loop_context_s) * num_threads;
+	alloc_or_exit(pool->thread_contexts, size);
+
+	pool->threads_len = num_threads;
+	for (size_t i = 0; i < pool->threads_len; ++i) {
+		id = 1 + i;
+		pool->thread_contexts[i].pool = pool;
+		pool->thread_contexts[i].id = id;
+
+		thrd_t *thread = pool->threads + i;
+		thrd_start_t func = thread_pool_loop;
+		void *arg = &(pool->thread_contexts[i]);
+		Tc((err = thrd_create(thread, func, arg)), id);
+		if (err) {
+			die("could not (%s)\n", "pool->done");
+		}
+#ifndef DEBUG
+		Tc(thrd_detach(*thread), id);
+#endif
+	}
+}
+
+void thread_pool_wait(thread_pool_s *pool)
+{
+	size_t id = 0;
+	assert(pool);
+	Tc(mtx_lock(pool->mutex), id);
+	while ((pool->num_working > 0) || (pool->first != NULL)) {
+		Tc(cnd_wait(pool->done, pool->mutex), id);
+	}
+	Tc(mtx_unlock(pool->mutex), id);
+}
+
+void thread_pool_stop(thread_pool_s *pool)
+{
+	size_t id = 0;
+	assert(pool);
+
+	Tc(mtx_lock(pool->mutex), id);
+
+	pool->stop = true;
+
+	while (pool->first != NULL) {
+		thread_pool_todo_s *elem = pool->first;
+		pool->first = elem->next;
+		free(elem);
+	}
+
+	Tc(cnd_broadcast(pool->todo), id);
+	Tc(mtx_unlock(pool->mutex), id);
+
+	Tc(mtx_lock(pool->mutex), id);
+	while (pool->num_working > 0) {
+		Tc(cnd_broadcast(pool->todo), id);
+		Tc(cnd_wait(pool->done, pool->mutex), id);
+	}
+	Tc(cnd_broadcast(pool->todo), id);
+	Tc(mtx_unlock(pool->mutex), id);
+	thrd_yield();
+
+	cnd_destroy(pool->todo);
+	free(pool->todo);
+	pool->todo = NULL;
+
+	cnd_destroy(pool->done);
+	free(pool->done);
+	pool->done = NULL;
+
+	mtx_destroy(pool->mutex);
+	free(pool->mutex);
+	pool->mutex = NULL;
+
+#ifdef DEBUG
+	for (size_t i = 0; i < pool->threads_len; ++i) {
+		int result = 0;
+		thrd_t thread = pool->threads[i];
+		Tc(thrd_join(thread, &result), id);
+		if (result) {
+			fprintf(stderr, "thread[%zu] returned %d\n", i, result);
+		}
+	}
+#endif
+	free(pool->threads);
+	pool->threads = NULL;
+	free(pool->thread_contexts);
+	pool->thread_contexts = NULL;
+	pool->threads_len = 0;
+}
+
+void thread_pool_add(thread_pool_s *pool, thrd_start_t func, void *arg)
+{
+	size_t id = 0;
+	assert(pool);
+	assert(func);
+
+	thread_pool_todo_s *elem;
+	alloc_or_exit(elem, sizeof(thread_pool_todo_s));
+	elem->func = func;
+	elem->arg = arg;
+	elem->next = NULL;
+
+	Tc(mtx_lock(pool->mutex), id);
+	if (pool->first == NULL) {
+		pool->first = elem;
+		pool->last = elem;
+	} else {
+		pool->last->next = elem;
+		pool->last = elem;
+	}
+	Tc(cnd_broadcast(pool->todo), id);
+	Tc(mtx_unlock(pool->mutex), id);
+}
+#endif /* SKIP_THREADS */
+
 typedef struct coordinate_plane {
 	const char *argv0;
 
@@ -253,6 +509,7 @@ typedef struct coordinate_plane {
 	size_t not_escaped;
 	uint32_t skip_rounds;
 
+	void *vpool;
 	uint32_t num_threads;
 
 	size_t pfuncs_idx;
@@ -359,8 +616,9 @@ coordinate_plane_s *coordinate_plane_new(const char *program_name,
 	alloc_or_exit(plane, size);
 
 	plane->argv0 = program_name;
-	plane->num_threads = num_threads;
 	plane->skip_rounds = skip_rounds;
+	plane->vpool = NULL;
+	plane->num_threads = num_threads;
 
 	coordinate_plane_reset(plane, win_width, win_height, center,
 			       resolution, pfunc_idx, seed);
@@ -371,6 +629,13 @@ coordinate_plane_s *coordinate_plane_new(const char *program_name,
 void coordinate_plane_free(coordinate_plane_s *plane)
 {
 	if (plane) {
+		if (plane->vpool) {
+#ifndef SKIP_THREADS
+			thread_pool_s *pool = plane->vpool;
+			thread_pool_stop(pool);
+#endif
+			free(plane->vpool);
+		}
 		free(plane->points);
 	}
 	free(plane);
@@ -393,6 +658,7 @@ typedef struct coordinate_plane_iterate_context {
 	size_t offset;
 	size_t step_size;
 	size_t local_escaped;
+	atomic_bool done;
 } coordinate_plane_iterate_context_s;
 
 static int coordinate_plane_iterate_context(coordinate_plane_iterate_context_s
@@ -421,6 +687,8 @@ static int coordinate_plane_iterate_context(coordinate_plane_iterate_context_s
 		}
 	}
 
+	ctx->done = true;
+
 	return 0;
 }
 
@@ -433,6 +701,7 @@ static void coordinate_plane_iterate_single_threaded(coordinate_plane_s *plane,
 	context.offset = 0;
 	context.step_size = 1;
 	context.local_escaped = 0;
+	context.done = false;
 
 	coordinate_plane_iterate_context(&context);
 
@@ -450,30 +719,6 @@ static int coordinate_plane_iterate_inner(void *void_context)
 	return coordinate_plane_iterate_context(context);
 }
 
-// we don't really need this boiler-plate to be this verbose
-#define thrd_create_or_die(our_id, thread_id, thread_func, context) do { \
-	int _thrd_err = thrd_create(thread_id, thread_func, context); \
-	switch (_thrd_err) { \
-	case thrd_success: \
-		break; \
-	case thrd_nomem: \
-		die("thrd_create for %zu returned thrd_nomem\n", our_id); \
-		break; \
-	case thrd_error: \
-		die("thrd_create for %zu returned thrd_error\n", our_id); \
-		break; \
-	case thrd_timedout: \
-		die("thrd_create for %zu returned thrd_timedout?\n", our_id); \
-		break; \
-	case thrd_busy: \
-		die("thrd_create for %zu returned thrd_busy?\n", our_id); \
-		break; \
-	default: \
-		die("thrd_create for %zu returned %d?\n", our_id, _thrd_err); \
-		break; \
-	} \
-} while (0)
-
 static void coordinate_plane_iterate_multi_threaded(coordinate_plane_s *plane,
 						    uint32_t steps)
 {
@@ -482,13 +727,19 @@ static void coordinate_plane_iterate_multi_threaded(coordinate_plane_s *plane,
 		coordinate_plane_iterate_single_threaded(plane, steps);
 		return;
 	}
-
-	thrd_t *thread_ids = NULL;
-	size_t size = sizeof(thrd_t) * num_threads;
-	alloc_or_exit(thread_ids, size);
+	thread_pool_s *pool = plane->vpool;
+	if (pool == NULL || pool->threads_len != num_threads) {
+		if (pool) {
+			thread_pool_stop(pool);
+			free(pool);
+		}
+		alloc_or_exit(plane->vpool, sizeof(thread_pool_s));
+		pool = plane->vpool;
+		thread_pool_init(pool, plane->num_threads);
+	}
 
 	coordinate_plane_iterate_context_s *contexts;
-	size = sizeof(coordinate_plane_iterate_context_s) * num_threads;
+	size_t size = sizeof(coordinate_plane_iterate_context_s) * num_threads;
 	alloc_or_exit(contexts, size);
 
 	for (size_t i = 0; i < num_threads; ++i) {
@@ -496,27 +747,23 @@ static void coordinate_plane_iterate_multi_threaded(coordinate_plane_s *plane,
 		contexts[i].steps = steps;
 		contexts[i].offset = i;
 		contexts[i].step_size = num_threads;
+		contexts[i].done = 0;
+
+		void *arg = &(contexts[i]);
+		thrd_start_t func = coordinate_plane_iterate_inner;
+		thread_pool_add(pool, func, arg);
 	}
+	thrd_yield();
+	thread_pool_wait(pool);
 
 	for (size_t i = 0; i < num_threads; ++i) {
-		void *context = &(contexts[i]);
-		thrd_start_t thread_func = &coordinate_plane_iterate_inner;
-		thrd_t *thread_id = &(thread_ids[i]);
-
-		thrd_create_or_die(i, thread_id, thread_func, context);
-	}
-
-	for (size_t i = 0; i < num_threads; ++i) {
-		int result = 0;
-		thrd_join(thread_ids[i], &result);
-		if (result) {
-			fprintf(stderr, "thread %zu returned %d?\n", i, result);
+		while (!contexts[i].done) {
+			thrd_yield();
 		}
 		plane->not_escaped -= contexts[i].local_escaped;
 		plane->escaped += contexts[i].local_escaped;
 	}
 
-	free(thread_ids);
 	free(contexts);
 }
 
@@ -1254,10 +1501,10 @@ static int coord_options_parse_argv(coord_options_s *options,
 			options->function = atoi(optarg);
 			break;
 		case 'r':	/* --seed_x | -r */
-			options->center_x = strtold(optarg, NULL);
+			options->seed_x = strtold(optarg, NULL);
 			break;
 		case 'i':	/* --seed_y | -i */
-			options->center_y = strtold(optarg, NULL);
+			options->seed_y = strtold(optarg, NULL);
 			break;
 		case 'c':	/* --threads | -c */
 			options->threads = atoi(optarg);
@@ -1343,6 +1590,18 @@ uint64_t time_in_usec(void)
 	uint64_t usec_per_sec = (1000 * 1000);
 	uint64_t time_in_micros = (usec_per_sec * tv.tv_sec) + tv.tv_usec;
 	return time_in_micros;
+}
+
+void backtrace_exit_handler(int sig)
+{
+	void *array[100];
+	size_t size;
+
+	size = backtrace(array, 100);
+
+	fprintf(stderr, "Error: signal %d:\n", sig);
+	backtrace_symbols_fd(array, size, STDERR_FILENO);
+	exit(EXIT_FAILURE);
 }
 
 #ifndef SKIP_SDL
@@ -1723,7 +1982,21 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane,
 			++it_per_frame;
 		} else if ((diff > usec_per_frame_high_threshold)
 			   && (it_per_frame > 1)) {
-			--it_per_frame;
+			if (it_per_frame < 10) {
+				--it_per_frame;
+			} else {
+				double ht = 1.0 * usec_per_frame_high_threshold;
+				double ratio = ht / diff;
+				uint32_t new_per_frame = it_per_frame * ratio;
+				if (new_per_frame >= it_per_frame) {
+					--it_per_frame;
+				} else {
+					it_per_frame = new_per_frame;
+				}
+				if (it_per_frame == 0) {
+					it_per_frame = 1;
+				}
+			}
 		}
 
 		uint64_t elapsed_since_last_print = now - last_print;
@@ -1774,7 +2047,7 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane,
 
 int main(int argc, char **argv)
 {
-
+	signal(SIGSEGV, backtrace_exit_handler);
 	coordinate_plane_s *plane = coordinate_plane_new_from_args(argc, argv);
 
 	size_t palette_len = 1024;
@@ -1863,6 +2136,7 @@ void print_coordinate_plane_ascii(coordinate_plane_s *plane)
 
 int main(int argc, char **argv)
 {
+	signal(SIGSEGV, backtrace_exit_handler);
 	coordinate_plane_s *plane = coordinate_plane_new_from_args(argc, argv);
 	size_t it_per_frame = 1;
 
