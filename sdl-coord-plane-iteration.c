@@ -386,6 +386,7 @@ typedef struct coordinate_plane_iterate_context {
 	size_t steps;
 	size_t offset;
 	size_t step_size;
+	size_t local_escaped;
 } coordinate_plane_iterate_context_s;
 
 static int coordinate_plane_iterate_context(coordinate_plane_iterate_context_s
@@ -396,7 +397,7 @@ static int coordinate_plane_iterate_context(coordinate_plane_iterate_context_s
 	pfunc_f pfunc = pfuncs[plane->pfuncs_idx].pfunc;
 	pfunc_escape_f pfunc_escape = pfuncs[plane->pfuncs_idx].pfunc_escape;
 
-	int local_escaped = 0;
+	ctx->local_escaped = 0;
 	for (size_t j = ctx->offset; j < plane->len; j += ctx->step_size) {
 		iterxy_s *p = plane->points + j;
 
@@ -404,18 +405,17 @@ static int coordinate_plane_iterate_context(coordinate_plane_iterate_context_s
 
 			if (pfunc_escape(p->z)) {
 				p->escaped = plane->iteration_count + i + 1;
-				continue;
+			} else {
+				pfunc(p);
 			}
-
-			pfunc(p);
 		}
 
 		if (p->escaped) {
-			++local_escaped;
+			++(ctx->local_escaped);
 		}
 	}
 
-	return local_escaped;
+	return 0;
 }
 
 static void coordinate_plane_iterate_single_threaded(coordinate_plane_s *plane,
@@ -426,12 +426,12 @@ static void coordinate_plane_iterate_single_threaded(coordinate_plane_s *plane,
 	context.steps = steps;
 	context.offset = 0;
 	context.step_size = 1;
+	context.local_escaped = 0;
 
-	int result = coordinate_plane_iterate_context(&context);
+	coordinate_plane_iterate_context(&context);
 
-	size_t local_escaped = (size_t)result;
-	plane->not_escaped -= local_escaped;
-	plane->escaped += local_escaped;
+	plane->not_escaped -= context.local_escaped;
+	plane->escaped += context.local_escaped;
 }
 
 #ifndef SKIP_THREADS
@@ -503,9 +503,11 @@ static void coordinate_plane_iterate_multi_threaded(coordinate_plane_s *plane,
 	for (size_t i = 0; i < num_threads; ++i) {
 		int result = 0;
 		thrd_join(thread_ids[i], &result);
-		size_t local_escaped = (size_t)result;
-		plane->not_escaped -= local_escaped;
-		plane->escaped += local_escaped;
+		if (result) {
+			fprintf(stderr, "thread %zu returned %d?\n", i, result);
+		}
+		plane->not_escaped -= contexts[i].local_escaped;
+		plane->escaped += contexts[i].local_escaped;
 	}
 
 	free(thread_ids);
@@ -1157,11 +1159,16 @@ static void coord_options_rationalize(coord_options_s *options)
 	if (options->skip_rounds < 0) {
 		options->skip_rounds = 0;
 	}
-#ifndef SKIP_THREADS
 	if (options->threads < 1) {
+#ifndef SKIP_THREADS
 		options->threads = (uint32_t)sysconf(_SC_NPROCESSORS_ONLN);
-	}
+		if (options->threads > 1) {
+			--(options->threads);
+		}
+#else
+		options->threads = 1;
 #endif
+	}
 }
 
 static int coord_options_parse_argv(coord_options_s *options,
@@ -1276,6 +1283,8 @@ static void print_help(FILE *out, const char *argv0, const char *version)
 	fprintf(out, "\t-i --seed_y=f      Imaginary (y) part of the seed\n");
 #ifndef SKIP_THREADS
 	fprintf(out, "\t-c --threads=n     Number of threads/cores to use\n");
+#else
+	fprintf(out, "\t-c --threads=n     Not available: --DSKIP_THREADS\n");
 #endif
 	fprintf(out, "\t-s --skip_rounds=n Number of iterations left black\n");
 	fprintf(out, "\t-v --version       Print version and exit\n");

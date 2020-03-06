@@ -41,6 +41,7 @@ tidy:
 		-T named_pfunc_s -T pfunc_f \
 		-T coordinate_plane_s -T coordinate_plane_iterate_context_s \
 		-T coord_options_s \
+		-T thread_pool_s \
 		./sdl-coord-plane-iteration.c
 
 
