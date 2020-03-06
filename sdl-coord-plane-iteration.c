@@ -13,13 +13,19 @@
 #define SDL_COORD_PLANE_ITERATION_VERSION "0.1.0"
 
 #include <assert.h>
+#include <float.h>
 #include <getopt.h>
+#include <inttypes.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/time.h>
+
+#ifndef SKIP_SDL
 #include <SDL.h>
+#endif
 
 #ifndef SKIP_THREADS
 #include <threads.h>
@@ -1129,10 +1135,18 @@ static void coord_options_rationalize(coord_options_s *options)
 		options->version = 0;
 	}
 	if (options->win_width < 1) {
+#ifndef SKIP_SDL
 		options->win_width = 800;
+#else
+		options->win_width = 80;
+#endif
 	}
 	if (options->win_height < 1) {
+#ifndef SKIP_SDL
 		options->win_height = ((options->win_width * 3) / 4);
+#else
+		options->win_height = 24;
+#endif
 	}
 	if (!isfinite(options->x_min)) {
 		options->x_min = -2.5;
@@ -1331,6 +1345,7 @@ uint64_t time_in_usec(void)
 	return time_in_micros;
 }
 
+#ifndef SKIP_SDL
 typedef struct sdl_texture_buffer {
 	SDL_Texture *texture;
 	pixel_buffer_s *pixel_buf;
@@ -1774,3 +1789,96 @@ int main(int argc, char **argv)
 		coordinate_plane_free(plane);
 	}
 }
+
+#else /* SKIP_SDL */
+
+int coord_plane_char_update(coordinate_plane_s *plane, char c)
+{
+	switch (c) {
+	case 'q':
+		return 1;
+	case 'j':
+		coordinate_plane_next_function(plane);
+		return 0;
+#ifndef SKIP_THREADS
+	case 'm':
+		++plane->num_threads;
+		return 0;
+	case 'n':
+		if (plane->num_threads > 1) {
+			--plane->num_threads;
+		}
+		return 0;
+#endif
+	case 'w':
+		coordinate_plane_pan_up(plane);
+		return 0;
+	case 's':
+		coordinate_plane_pan_down(plane);
+		return 0;
+	case 'a':
+		coordinate_plane_pan_left(plane);
+		return 0;
+	case 'd':
+		coordinate_plane_pan_right(plane);
+		return 0;
+	case 'x':
+		coordinate_plane_zoom_out(plane);
+		return 0;
+	case 'z':
+		coordinate_plane_zoom_in(plane);
+		return 0;
+	}
+
+	return 0;
+}
+
+void print_coordinate_plane_ascii(coordinate_plane_s *plane)
+{
+	printf("\n");
+	/* clear */
+	printf("\033[H\033[J");
+
+	for (size_t py = 0; py < plane->win_height; ++py) {
+		for (size_t px = 0; px < plane->win_width; ++px) {
+			size_t i = (py * plane->win_width) + px;
+			iterxy_s *p = plane->points + i;
+			char c;
+			if (p->escaped == 0) {
+				c = ' ';
+			} else if (p->escaped < 10) {
+				c = '0' + p->escaped;
+			} else if (p->escaped >= 10 && p->escaped < 36) {
+				c = 'A' + p->escaped - 10;
+			} else if (p->escaped >= 36 && p->escaped < (36 + 26)) {
+				c = 'a' + p->escaped - 36;
+			} else {
+				c = '*';
+			}
+			printf("%c", c);
+		}
+		printf("\n");
+	}
+}
+
+int main(int argc, char **argv)
+{
+	coordinate_plane_s *plane = coordinate_plane_new_from_args(argc, argv);
+	size_t it_per_frame = 1;
+
+	for (unsigned long c = 0, i = 0; c != 'q'; ++i) {
+		coordinate_plane_iterate(plane, it_per_frame);
+		print_coordinate_plane_ascii(plane);
+		const char *title = pfuncs[plane->pfuncs_idx].name;
+		printf("%s %lu. <enter> to continue or 'q<enter>' to quit: ",
+		       title, i);
+		c = getchar();
+		coord_plane_char_update(plane, c);
+	}
+
+	if (Make_valgrind_happy) {
+		coordinate_plane_free(plane);
+	}
+}
+
+#endif /* SKIP_SDL */

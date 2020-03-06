@@ -7,6 +7,10 @@ ifeq ($(findstring /usr/include/threads.h,$(wildcard /usr/include/*.h)),)
 CFLAGS += '-DSKIP_THREADS'
 endif
 
+ifeq ($(findstring /usr/include/SDL2/SDL.h,$(wildcard /usr/include/SDL2/*.h)),)
+CFLAGS += '-DSKIP_SDL'
+endif
+
 ifdef DEBUG
 MAKEFILE_DEBUG=$(DEBUG)
 else
