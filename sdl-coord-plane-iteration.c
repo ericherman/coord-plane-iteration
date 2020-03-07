@@ -1592,6 +1592,10 @@ uint64_t time_in_usec(void)
 	return time_in_micros;
 }
 
+#ifndef STDERR_FILENO
+#define STDERR_FILENO 2
+#endif
+
 void backtrace_exit_handler(int sig)
 {
 	void *array[100];
