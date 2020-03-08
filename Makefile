@@ -1,6 +1,8 @@
-default: sdl-coord-plane-iteration
+default: check
 
-CFLAGS += -g -Wextra -Wall -Wpedantic -rdynamic
+CC=cc
+
+CFLAGS += -g -Wextra -Wall -Wpedantic -rdynamic -Isrc/
 LDLIBS += -lm
 
 ifeq ($(findstring /usr/include/threads.h,$(wildcard /usr/include/*.h)),)
@@ -10,10 +12,9 @@ LDLIBS += -lpthread
 endif
 
 ifeq ($(findstring /usr/include/SDL2/SDL.h,$(wildcard /usr/include/SDL2/*.h)),)
-CFLAGS += -DSKIP_SDL
+BEST_CHECK=cli-demo
 else
-CFLAGS += `sdl2-config --cflags`
-LDLIBS += `sdl2-config --libs`
+BEST_CHECK=sdl-demo
 endif
 
 ifdef DEBUG
@@ -29,13 +30,48 @@ endif
 
 # extracted from https://github.com/torvalds/linux/blob/master/scripts/Lindent
 LINDENT=indent -npro -kr -i8 -ts8 -sob -l80 -ss -ncs -cp1 -il0
+SHELL=/bin/bash
 
-sdl-coord-plane-iteration: sdl-coord-plane-iteration.c
-	cc $(CFLAGS) $(LDFLAGS) ./sdl-coord-plane-iteration.c \
-		-o ./sdl-coord-plane-iteration $(LDLIBS)
+HEADERS=src/logerr-die.h \
+	src/alloc-or-die.h \
+	src/rgb-hsv.h \
+	src/basic-thread-pool.h \
+	src/coord-plane-option-parser.h \
+	src/coord-plane-iteration.h \
+	src/pixel-coord-plane-iteration.h
 
-check: sdl-coord-plane-iteration
+SOURCES=src/logerr-die.c \
+	src/rgb-hsv.c \
+	src/basic-thread-pool.c \
+	src/coord-plane-option-parser.c \
+	src/coord-plane-iteration.c
+
+SDL_SOURCES=$(SOURCES) \
+	src/pixel-coord-plane-iteration.c \
+	src/sdl-coord-plane-iteration.c
+
+SDL_HEADERS=$(HEADERS) \
+	src/pixel-coord-plane-iteration.h
+
+
+sdl-coord-plane-iteration: $(SDL_SOURCES) $(SDL_HEADERS)
+	$(CC) $(CFLAGS) `sdl2-config --cflags` $(LDFLAGS) $(SDL_SOURCES) \
+		-o ./sdl-coord-plane-iteration $(LDLIBS) `sdl2-config --libs`
+
+sdl-demo: sdl-coord-plane-iteration
 	./sdl-coord-plane-iteration
+
+CLI_SOURCES=$(SOURCES) src/cli-coord-plane-iteration.c
+CLI_HEADERS=$(HEADERS)
+
+cli-coord-plane-iteration: $(CLI_SOURCES) $(CLI_HEADERS)
+	$(CC) $(CFLAGS) -DNO_GUI=1 $(LDFLAGS) $(CLI_SOURCES) \
+		-o ./cli-coord-plane-iteration $(LDLIBS)
+
+cli-demo: cli-coord-plane-iteration
+	./cli-coord-plane-iteration
+
+check: cli-coord-plane-iteration $(BEST_CHECK)
 
 tidy:
 	$(LINDENT) \
@@ -50,11 +86,10 @@ tidy:
 		-T named_pfunc_s -T pfunc_f \
 		-T coordinate_plane_s -T coordinate_plane_iterate_context_s \
 		-T coord_options_s \
-		-T thread_pool_s \
+		-T basic_thread_pool_s \
 		-T thread_pool_todo_s -T thread_pool_loop_context_s \
-		./sdl-coord-plane-iteration.c
-
-
+		src/*.c src/*.h
 
 clean:
 	rm -rf `cat .gitignore | sed -e 's/#.*//'`
+	pushd src && rm -rf `cat ../.gitignore | sed -e 's/#.*//'` && popd
