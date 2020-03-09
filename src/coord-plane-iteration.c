@@ -3,17 +3,18 @@
 /* Copyright (C) 2020 Eric Herman <eric@freesa.org> */
 
 #include <assert.h>
+#include <float.h>
 #include <math.h>
 #include <stdbool.h>
-#include <float.h>
-
-#include <alloc-or-die.h>
-#include <coord-plane-iteration.h>
+#include <string.h>
 
 #ifndef SKIP_THREADS
 #include <stdatomic.h>
 #include <basic-thread-pool.h>
 #endif
+
+#include <alloc-or-die.h>
+#include <coord-plane-iteration.h>
 
 /* the y is understood to contain an i, the sqrt(-1) */
 static void square_complex(ldxy_s *out, ldxy_s in)
@@ -182,8 +183,14 @@ struct coordinate_plane {
 	size_t pfuncs_idx;
 	ldxy_s seed;
 
-	iterxy_s *points;
-	size_t len;
+	iterxy_s *all_points;
+	size_t all_points_len;
+
+	iterxy_s **scratch;
+	size_t scratch_len;
+
+	iterxy_s **points_not_escaped;
+	size_t points_not_escaped_len;
 };
 
 long double coordinate_plane_x_min(coordinate_plane_s *plane)
@@ -228,14 +235,31 @@ coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
 	plane->seed = seed;
 
 	size_t needed = win_width * win_height;
-	if (plane->points && (plane->len < needed)) {
-		free(plane->points);
-		plane->points = NULL;
+	if (plane->all_points && (plane->all_points_len < needed)) {
+		free(plane->all_points);
+		plane->all_points = NULL;
+		plane->all_points_len = 0;
+
+		free(plane->scratch);
+		plane->scratch = NULL;
+		plane->scratch_len = 0;
+
+		free(plane->points_not_escaped);
+		plane->points_not_escaped = NULL;
+		plane->points_not_escaped_len = 0;
 	}
-	if (!plane->points) {
-		plane->len = needed;
-		size_t size = plane->len * sizeof(iterxy_s);
-		alloc_or_die(&plane->points, size);
+	if (!plane->all_points) {
+		size_t size = needed * sizeof(iterxy_s);
+		alloc_or_die(&plane->all_points, size);
+		plane->all_points_len = needed;
+
+		size = needed * sizeof(iterxy_s *);
+		alloc_or_die(&plane->scratch, size);
+		plane->scratch_len = needed;
+
+		size = needed * sizeof(iterxy_s *);
+		alloc_or_die(&plane->points_not_escaped, size);
+		plane->points_not_escaped_len = needed;
 	}
 
 	pfunc_init_f pfunc_init = pfuncs[plane->pfuncs_idx].pfunc_init;
@@ -245,7 +269,8 @@ coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
 		for (size_t px = 0; px < plane->win_width; ++px) {
 			size_t i = (py * plane->win_width) + px;
 
-			iterxy_s *p = plane->points + i;
+			iterxy_s *p = plane->all_points + i;
+			plane->points_not_escaped[i] = p;
 
 			/* location on the co-ordinate plane */
 			ldxy_s xy;
@@ -302,7 +327,7 @@ void coordinate_plane_free(coordinate_plane_s *plane)
 			basic_thread_pool_stop_and_free(pool);
 		}
 #endif
-		free(plane->points);
+		free(plane->all_points);
 	}
 	free(plane);
 }
@@ -324,12 +349,41 @@ typedef struct coordinate_plane_iterate_context {
 	size_t offset;
 	size_t step_size;
 	size_t local_escaped;
+	size_t local_not_escaped;
+	iterxy_s **not_escaped;
+	size_t not_escaped_len;
 #ifndef SKIP_THREADS
 	atomic_bool done;
 #else
 	bool done;
 #endif
 } coordinate_plane_iterate_context_s;
+
+static void
+coordinate_plane_iterate_context_init(coordinate_plane_iterate_context_s *ctx,
+				      coordinate_plane_s *plane, size_t steps,
+				      size_t offset, size_t step_size)
+{
+	ctx->plane = plane;
+	ctx->steps = steps;
+	ctx->offset = offset;
+	ctx->step_size = step_size;
+	ctx->done = false;
+	size_t scratch_offset = offset * (plane->scratch_len / step_size);
+	ctx->not_escaped = plane->scratch + scratch_offset;
+}
+
+static void coordinate_plane_update_from_iterate_context(coordinate_plane_s
+							 *plane, coordinate_plane_iterate_context_s
+							 *ctx)
+{
+	plane->escaped += ctx->local_escaped;
+	iterxy_s **start = plane->points_not_escaped + plane->not_escaped;
+	size_t size = sizeof(iterxy_s *) * ctx->local_not_escaped;
+	memcpy(start, ctx->not_escaped, size);
+	plane->not_escaped += ctx->local_not_escaped;
+	ctx->not_escaped_len = 0;
+}
 
 static int coordinate_plane_iterate_context(coordinate_plane_iterate_context_s
 					    *ctx)
@@ -340,11 +394,12 @@ static int coordinate_plane_iterate_context(coordinate_plane_iterate_context_s
 	pfunc_escape_f pfunc_escape = pfuncs[plane->pfuncs_idx].pfunc_escape;
 
 	ctx->local_escaped = 0;
-	for (size_t j = ctx->offset; j < plane->len; j += ctx->step_size) {
-		iterxy_s *p = plane->points + j;
+	ctx->local_not_escaped = 0;
+	for (size_t j = ctx->offset; j < plane->not_escaped;
+	     j += ctx->step_size) {
+		iterxy_s *p = plane->points_not_escaped[j];
 
 		for (size_t i = 0; i < ctx->steps && !p->escaped; ++i) {
-
 			if (pfunc_escape(p->z)) {
 				p->escaped = plane->iteration_count + i + 1;
 			} else {
@@ -354,6 +409,9 @@ static int coordinate_plane_iterate_context(coordinate_plane_iterate_context_s
 
 		if (p->escaped) {
 			++(ctx->local_escaped);
+		} else {
+			ctx->not_escaped[ctx->local_not_escaped] = p;
+			++(ctx->local_not_escaped);
 		}
 	}
 
@@ -366,17 +424,12 @@ static void coordinate_plane_iterate_single_threaded(coordinate_plane_s *plane,
 						     uint32_t steps)
 {
 	coordinate_plane_iterate_context_s context;
-	context.plane = plane;
-	context.steps = steps;
-	context.offset = 0;
-	context.step_size = 1;
-	context.local_escaped = 0;
-	context.done = false;
+	coordinate_plane_iterate_context_init(&context, plane, steps, 0, 1);
 
 	coordinate_plane_iterate_context(&context);
 
-	plane->not_escaped -= context.local_escaped;
-	plane->escaped += context.local_escaped;
+	plane->not_escaped = 0;
+	coordinate_plane_update_from_iterate_context(plane, &context);
 }
 
 #ifndef SKIP_THREADS
@@ -412,25 +465,23 @@ static void coordinate_plane_iterate_multi_threaded(coordinate_plane_s *plane,
 	alloc_or_die(&contexts, size);
 
 	for (size_t i = 0; i < num_threads; ++i) {
-		contexts[i].plane = plane;
-		contexts[i].steps = steps;
-		contexts[i].offset = i;
-		contexts[i].step_size = num_threads;
-		contexts[i].done = 0;
+		coordinate_plane_iterate_context_init(contexts + i, plane,
+						      steps, i, num_threads);
 
-		void *arg = &(contexts[i]);
+		void *arg = contexts + i;
 		thrd_start_t func = coordinate_plane_iterate_inner;
 		basic_thread_pool_add(pool, func, arg);
 	}
 	thrd_yield();
 	basic_thread_pool_wait(pool);
 
+	plane->not_escaped = 0;
 	for (size_t i = 0; i < num_threads; ++i) {
 		while (!contexts[i].done) {
 			thrd_yield();
 		}
-		plane->not_escaped -= contexts[i].local_escaped;
-		plane->escaped += contexts[i].local_escaped;
+		coordinate_plane_update_from_iterate_context(plane,
+							     contexts + i);
 	}
 
 	free(contexts);
@@ -441,9 +492,6 @@ static void coordinate_plane_iterate_multi_threaded(coordinate_plane_s *plane,
 size_t coordinate_plane_iterate(coordinate_plane_s *plane, uint32_t steps)
 {
 	size_t old_escaped = plane->escaped;
-
-	plane->escaped = 0;
-	plane->not_escaped = plane->win_height * plane->win_width;
 
 #ifndef SKIP_THREADS
 	coordinate_plane_iterate_multi_threaded(plane, steps);
@@ -565,7 +613,7 @@ void coordinate_plane_recenter(coordinate_plane_s *plane,
 	assert(x < plane->win_width);
 	assert(y < plane->win_height);
 
-	iterxy_s *p = plane->points + ((plane->win_width * y) + x);
+	iterxy_s *p = plane->all_points + ((plane->win_width * y) + x);
 
 	coordinate_plane_reset(plane, plane->win_width, plane->win_height,
 			       p->c, plane->resolution, plane->pfuncs_idx,
@@ -635,7 +683,7 @@ uint64_t coordinate_plane_escaped(coordinate_plane_s *plane, uint32_t x,
 				  uint32_t y)
 {
 	size_t i = (y * plane->win_width) + x;
-	iterxy_s *p = plane->points + i;
+	iterxy_s *p = plane->all_points + i;
 	return p->escaped;
 }
 
