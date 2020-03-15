@@ -17,6 +17,8 @@ extern FILE *_global_err_stream;
 #ifndef logerror
 #define logerror(format, ...) \
 	do { \
+		fflush(stdout); /* avoid POSIX undefined stdout+stderr */ \
+		/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/V2_chap02.html#tag_15_05_01 */ \
 		fprintf(_err_stream, "%s:%d: ", __FILE__, __LINE__); \
 		/* fprintf(_err_stream, format __VA_OPT__(,) __VA_ARGS__); */ \
 		/* fprintf(_err_stream, format, ##_VA_ARGS__); */ \

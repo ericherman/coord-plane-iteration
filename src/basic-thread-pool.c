@@ -267,6 +267,8 @@ void basic_thread_pool_stop_and_free(basic_thread_pool_s *pool)
 		thrd_t thread = pool->threads[i];
 		Tc(thrd_join(thread, &result), id);
 		if (result) {
+			/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/V2_chap02.html#tag_15_05_01 */
+			fflush(stdout);
 			fprintf(stderr, "thread[%zu] returned %d\n", i, result);
 		}
 	}
