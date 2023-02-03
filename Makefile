@@ -25,7 +25,7 @@ endif
 ifeq ($(MAKEFILE_DEBUG),0)
 CFLAGS += -DNDEBUG -O2
 else
-CFLAGS += -DDEBUG -O0
+CFLAGS += -DDEBUG -O0 -DMake_valgrind_happy=1
 endif
 
 # extracted from https://github.com/torvalds/linux/blob/master/scripts/Lindent
@@ -59,7 +59,7 @@ sdl-coord-plane-iteration: $(SDL_SOURCES) $(SDL_HEADERS)
 		-o ./sdl-coord-plane-iteration $(LDLIBS) `sdl2-config --libs`
 
 sdl-demo: sdl-coord-plane-iteration
-	./sdl-coord-plane-iteration
+	./sdl-coord-plane-iteration --halt_after=1000
 
 CLI_SOURCES=$(SOURCES) src/cli-coord-plane-iteration.c
 CLI_HEADERS=$(HEADERS)
@@ -69,9 +69,12 @@ cli-coord-plane-iteration: $(CLI_SOURCES) $(CLI_HEADERS)
 		-o ./cli-coord-plane-iteration $(LDLIBS)
 
 cli-demo: cli-coord-plane-iteration
-	./cli-coord-plane-iteration
+	./cli-coord-plane-iteration --halt_after=1000
 
 check: cli-coord-plane-iteration $(BEST_CHECK)
+	./cli-coord-plane-iteration --halt_after=1000 | tail -n1 > check.out
+	grep "escaped: 1349 not: 571" check.out
+	@echo SUCCESS $@
 
 tidy:
 	$(LINDENT) \

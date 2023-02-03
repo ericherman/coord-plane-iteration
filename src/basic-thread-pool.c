@@ -107,7 +107,7 @@ basic_thread_pool_s *basic_thread_pool_new(size_t num_threads)
 	num_threads = num_threads ? num_threads : 1;
 
 	size_t size = sizeof(basic_thread_pool_s);
-	basic_thread_pool_s *pool = malloc(size);
+	basic_thread_pool_s *pool = NULL;
 	malloc_or_log(&pool, sizeof(basic_thread_pool_s));
 
 	pool->first = NULL;
@@ -222,8 +222,9 @@ size_t basic_thread_pool_size(basic_thread_pool_s *pool)
 	return pool->threads_len;
 }
 
-void basic_thread_pool_stop_and_free(basic_thread_pool_s *pool)
+void basic_thread_pool_stop_and_free(basic_thread_pool_s **pool_ref)
 {
+	basic_thread_pool_s *pool = *pool_ref;
 	size_t id = 0;
 	assert(pool);
 
@@ -275,6 +276,9 @@ void basic_thread_pool_stop_and_free(basic_thread_pool_s *pool)
 #endif
 
 	free(pool->threads);
+	pool->threads = NULL;
 	free(pool->thread_contexts);
+	pool->thread_contexts = NULL;
 	free(pool);
+	*pool_ref = NULL;
 }

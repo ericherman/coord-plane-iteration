@@ -370,8 +370,8 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane,
 		human_input_init(new_input);
 
 		while (SDL_PollEvent(&event)) {
-			shutdown = sdl_process_event(&event_ctx, new_input);
-			if (shutdown) {
+			if (sdl_process_event(&event_ctx, new_input)) {
+				shutdown = 1;
 				break;
 			}
 		}
@@ -404,6 +404,11 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane,
 		uint64_t before = time_in_usec();
 
 		coordinate_plane_iterate(plane, it_per_frame);
+		uint64_t it_count = coordinate_plane_iteration_count(plane);
+		if (coordinate_plane_halt_after(plane) &&
+		    (it_count >= coordinate_plane_halt_after(plane))) {
+			shutdown = 1;
+		}
 		pixel_buffer_update(plane, virtual_win);
 
 		sdl_blit_texture(renderer, &texture_buf);
@@ -434,14 +439,12 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane,
 		}
 
 		uint64_t elapsed_since_last_print = now - last_print;
-		if (elapsed_since_last_print > usec_per_sec) {
+		if (shutdown || elapsed_since_last_print > usec_per_sec) {
 			double seconds_elapsed_since_last_print =
 			    (1.0 * elapsed_since_last_print) / usec_per_sec;
 			double fps =
 			    frames_since_print /
 			    seconds_elapsed_since_last_print;
-			uint64_t it_count =
-			    coordinate_plane_iteration_count(plane);
 			uint64_t it_diff;
 			if (it_count >= iterations_at_last_print) {
 				it_diff = it_count - iterations_at_last_print;

@@ -60,6 +60,7 @@ typedef struct coord_options {
 	long double seed_y;
 	int function;
 	int threads;
+	int halt_after;
 	int skip_rounds;
 	int version;
 	int help;
@@ -77,6 +78,7 @@ static void coord_options_init(coord_options_s *options)
 	options->seed_x = NAN;
 	options->seed_y = NAN;
 	options->threads = -1;
+	options->halt_after = -1;
 	options->skip_rounds = -1;
 	options->version = 0;
 	options->help = 0;
@@ -126,6 +128,9 @@ static void coord_options_rationalize(coord_options_s *options)
 	if (!isfinite(options->seed_y)) {
 		options->seed_y = -0.381086;
 	}
+	if (options->halt_after < 0) {
+		options->halt_after = 0;
+	}
 	if (options->skip_rounds < 0) {
 		options->skip_rounds = 0;
 	}
@@ -148,7 +153,7 @@ static int coord_options_parse_argv(coord_options_s *options,
 	int option_index;
 
 	/* yes, optstirng is horrible */
-	const char *optstring = "HVw::h::x::y::f::t::j::r::i::c::s::";
+	const char *optstring = "HVw::h::x::y::f::t::j::r::i::c::a::s::";
 
 	struct option long_options[] = {
 		{ "help", no_argument, 0, 'H' },
@@ -163,6 +168,7 @@ static int coord_options_parse_argv(coord_options_s *options,
 		{ "seed_x", optional_argument, 0, 'r' },
 		{ "seed_y", optional_argument, 0, 'i' },
 		{ "threads", optional_argument, 0, 'c' },
+		{ "halt_after", optional_argument, 0, 'a' },
 		{ "skip_rounds", optional_argument, 0, 's' },
 		{ 0, 0, 0, 0 }
 	};
@@ -218,6 +224,9 @@ static int coord_options_parse_argv(coord_options_s *options,
 		case 'c':	/* --threads | -c */
 			options->threads = atoi(optarg);
 			break;
+		case 'a':	/* --halt_after | -a */
+			options->halt_after = atoi(optarg);
+			break;
 		case 's':	/* --skip_rounds | -s */
 			options->skip_rounds = atoi(optarg);
 			break;
@@ -256,6 +265,7 @@ void print_help(FILE *out, const char *argv0, const char *version)
 #else
 	fprintf(out, "\t-c --threads=n     Not available: --DSKIP_THREADS\n");
 #endif
+	fprintf(out, "\t-a --halt_after=n  Execute this many iterations\n");
 	fprintf(out, "\t-s --skip_rounds=n Number of iterations left black\n");
 	fprintf(out, "\t-v --version       Print version and exit\n");
 	fprintf(out, "\t-h --help          This message and exit\n");
@@ -287,7 +297,8 @@ coordinate_plane_s *coordinate_plane_new_from_args(int argc, char **argv,
 	coordinate_plane_s *plane =
 	    coordinate_plane_new(argv[0], options.win_width, options.win_height,
 				 center, resolution, options.function, seed,
-				 options.skip_rounds, options.threads);
+				 options.halt_after, options.skip_rounds,
+				 options.threads);
 
 	return plane;
 }

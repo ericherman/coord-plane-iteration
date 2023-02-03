@@ -163,6 +163,10 @@ const size_t pfuncs_len = 5;
 const size_t pfuncs_len = 2;
 #endif /* INCLUDE_ALL_FUNCTIONS */
 
+struct coordinate_plane_iterate_context;
+typedef struct coordinate_plane_iterate_context
+    coordinate_plane_iterate_context_s;
+
 struct coordinate_plane {
 	const char *argv0;
 
@@ -172,13 +176,20 @@ struct coordinate_plane {
 	ldxy_s center;
 	long double resolution;
 
-	uint32_t iteration_count;
+	uint64_t iteration_count;
 	size_t escaped;
 	size_t not_escaped;
+	uint64_t halt_after;
 	uint32_t skip_rounds;
 
-	void *vpool;
+#ifndef SKIP_THREADS
+	basic_thread_pool_s *tpool;
+#else
+	void *tpool;
+#endif
 	uint32_t num_threads;
+	coordinate_plane_iterate_context_s *contexts;
+	size_t contexts_len;
 
 	size_t pfuncs_idx;
 	ldxy_s seed;
@@ -191,6 +202,22 @@ struct coordinate_plane {
 
 	iterxy_s **points_not_escaped;
 	size_t points_not_escaped_len;
+};
+
+struct coordinate_plane_iterate_context {
+	coordinate_plane_s *plane;
+	size_t steps;
+	size_t offset;
+	size_t step_size;
+	size_t local_escaped;
+	size_t local_not_escaped;
+	iterxy_s **not_escaped;
+	size_t not_escaped_len;
+#ifndef SKIP_THREADS
+	atomic_bool done;
+#else
+	bool done;
+#endif
 };
 
 long double coordinate_plane_x_min(coordinate_plane_s *plane)
@@ -299,6 +326,7 @@ coordinate_plane_s *coordinate_plane_new(const char *program_name,
 					 long double resolution,
 					 size_t pfunc_idx,
 					 ldxy_s seed,
+					 uint64_t halt_after,
 					 uint32_t skip_rounds,
 					 uint32_t num_threads)
 {
@@ -306,10 +334,17 @@ coordinate_plane_s *coordinate_plane_new(const char *program_name,
 	size_t size = sizeof(coordinate_plane_s);
 
 	alloc_or_die(&plane, size);
+	memset(plane, 0x00, size);
 
 	plane->argv0 = program_name;
+	plane->halt_after = halt_after;
 	plane->skip_rounds = skip_rounds;
-	plane->vpool = NULL;
+
+	coordinate_plane_iterate_context_s *contexts;
+	plane->contexts_len = num_threads ? num_threads : 1;
+	size = sizeof(coordinate_plane_iterate_context_s) * plane->contexts_len;
+	alloc_or_die(&contexts, size);
+	plane->contexts = contexts;
 	plane->num_threads = num_threads;
 
 	coordinate_plane_reset(plane, win_width, win_height, center,
@@ -321,13 +356,23 @@ coordinate_plane_s *coordinate_plane_new(const char *program_name,
 void coordinate_plane_free(coordinate_plane_s *plane)
 {
 	if (plane) {
+		free(plane->contexts);
 #ifndef SKIP_THREADS
-		if (plane->vpool) {
-			basic_thread_pool_s *pool = plane->vpool;
-			basic_thread_pool_stop_and_free(pool);
+		if (plane->tpool) {
+			basic_thread_pool_stop_and_free(&(plane->tpool));
 		}
 #endif
 		free(plane->all_points);
+		plane->all_points = NULL;
+		plane->all_points_len = 0;
+
+		free(plane->scratch);
+		plane->scratch = NULL;
+		plane->scratch_len = 0;
+
+		free(plane->points_not_escaped);
+		plane->points_not_escaped = NULL;
+		plane->points_not_escaped_len = 0;
 	}
 	free(plane);
 }
@@ -343,27 +388,12 @@ void coordinate_plane_resize(coordinate_plane_s *plane, uint32_t new_win_width,
 			       plane->seed);
 }
 
-typedef struct coordinate_plane_iterate_context {
-	coordinate_plane_s *plane;
-	size_t steps;
-	size_t offset;
-	size_t step_size;
-	size_t local_escaped;
-	size_t local_not_escaped;
-	iterxy_s **not_escaped;
-	size_t not_escaped_len;
-#ifndef SKIP_THREADS
-	atomic_bool done;
-#else
-	bool done;
-#endif
-} coordinate_plane_iterate_context_s;
-
 static void
-coordinate_plane_iterate_context_init(coordinate_plane_iterate_context_s *ctx,
-				      coordinate_plane_s *plane, size_t steps,
-				      size_t offset, size_t step_size)
+coordinate_plane_iterate_context_init(coordinate_plane_s *plane,
+				      size_t steps, size_t offset,
+				      size_t step_size)
 {
+	coordinate_plane_iterate_context_s *ctx = plane->contexts + offset;
 	ctx->plane = plane;
 	ctx->steps = steps;
 	ctx->offset = offset;
@@ -423,13 +453,14 @@ static int coordinate_plane_iterate_context(coordinate_plane_iterate_context_s
 static void coordinate_plane_iterate_single_threaded(coordinate_plane_s *plane,
 						     uint32_t steps)
 {
-	coordinate_plane_iterate_context_s context;
-	coordinate_plane_iterate_context_init(&context, plane, steps, 0, 1);
+	size_t offset = 0;
+	coordinate_plane_iterate_context_init(plane, steps, offset, 1);
 
-	coordinate_plane_iterate_context(&context);
+	coordinate_plane_iterate_context_s *context = plane->contexts + offset;
+	coordinate_plane_iterate_context(context);
 
 	plane->not_escaped = 0;
-	coordinate_plane_update_from_iterate_context(plane, &context);
+	coordinate_plane_update_from_iterate_context(plane, context);
 }
 
 #ifndef SKIP_THREADS
@@ -450,41 +481,33 @@ static void coordinate_plane_iterate_multi_threaded(coordinate_plane_s *plane,
 		coordinate_plane_iterate_single_threaded(plane, steps);
 		return;
 	}
-	basic_thread_pool_s *pool = plane->vpool;
-	if (pool == NULL || basic_thread_pool_size(pool) != num_threads) {
+	basic_thread_pool_s *pool = plane->tpool;
+	if (pool == NULL || basic_thread_pool_size(pool) < num_threads) {
 		if (pool) {
-			basic_thread_pool_stop_and_free(pool);
+			basic_thread_pool_stop_and_free(&(plane->tpool));
 		}
-		pool = basic_thread_pool_new(plane->num_threads);
-		assert(pool);
-		plane->vpool = pool;
+		plane->tpool = basic_thread_pool_new(plane->num_threads);
+		assert(plane->tpool);
 	}
-
-	coordinate_plane_iterate_context_s *contexts;
-	size_t size = sizeof(coordinate_plane_iterate_context_s) * num_threads;
-	alloc_or_die(&contexts, size);
 
 	for (size_t i = 0; i < num_threads; ++i) {
-		coordinate_plane_iterate_context_init(contexts + i, plane,
-						      steps, i, num_threads);
-
-		void *arg = contexts + i;
+		coordinate_plane_iterate_context_init(plane, steps, i,
+						      num_threads);
+		void *arg = plane->contexts + i;
 		thrd_start_t func = coordinate_plane_iterate_inner;
-		basic_thread_pool_add(pool, func, arg);
+		basic_thread_pool_add(plane->tpool, func, arg);
 	}
 	thrd_yield();
-	basic_thread_pool_wait(pool);
+	basic_thread_pool_wait(plane->tpool);
 
 	plane->not_escaped = 0;
 	for (size_t i = 0; i < num_threads; ++i) {
-		while (!contexts[i].done) {
+		while (!plane->contexts[i].done) {
 			thrd_yield();
 		}
-		coordinate_plane_update_from_iterate_context(plane,
-							     contexts + i);
+		coordinate_plane_iterate_context_s *ctx = plane->contexts + i;
+		coordinate_plane_update_from_iterate_context(plane, ctx);
 	}
-
-	free(contexts);
 }
 
 #endif /* #ifndef SKIP_THREADS */
@@ -492,16 +515,32 @@ static void coordinate_plane_iterate_multi_threaded(coordinate_plane_s *plane,
 size_t coordinate_plane_iterate(coordinate_plane_s *plane, uint32_t steps)
 {
 	size_t old_escaped = plane->escaped;
+	size_t halt_after = coordinate_plane_halt_after(plane);
 
+	if (halt_after) {
+		uint64_t it_count = coordinate_plane_iteration_count(plane);
+		uint64_t remaining = 0;
+		if (it_count < halt_after) {
+			remaining = halt_after - it_count;
+		}
+		if (steps > remaining) {
+			steps = remaining;
+		}
+	}
+
+	if (steps) {
 #ifndef SKIP_THREADS
-	coordinate_plane_iterate_multi_threaded(plane, steps);
+		coordinate_plane_iterate_multi_threaded(plane, steps);
 #else
-	coordinate_plane_iterate_single_threaded(plane, steps);
+		coordinate_plane_iterate_single_threaded(plane, steps);
 #endif /* #ifndef SKIP_THREADS */
 
-	plane->iteration_count += steps;
+		plane->iteration_count += steps;
+	}
 
-	return plane->escaped - old_escaped;
+	assert(plane->escaped >= old_escaped);
+	size_t newly_escaped = plane->escaped - old_escaped;
+	return newly_escaped;
 }
 
 void coordinate_plane_next_function(coordinate_plane_s *plane)
@@ -633,6 +672,17 @@ uint32_t coordinate_plane_win_height(coordinate_plane_s *plane)
 void coordinate_plane_threads_more(coordinate_plane_s *plane)
 {
 	++(plane->num_threads);
+	if (plane->num_threads > plane->contexts_len) {
+		free(plane->contexts);
+		plane->contexts = NULL;
+		plane->contexts_len = plane->num_threads;
+		size_t size =
+		    sizeof(coordinate_plane_iterate_context_s) *
+		    plane->contexts_len;
+		coordinate_plane_iterate_context_s *contexts;
+		alloc_or_die(&contexts, size);
+		plane->contexts = contexts;
+	}
 }
 
 void coordinate_plane_threads_less(coordinate_plane_s *plane)
@@ -672,6 +722,11 @@ void coordinate_plane_seed(coordinate_plane_s *plane, ldxy_s *out)
 long double coordinate_plane_resolution(coordinate_plane_s *plane)
 {
 	return plane->resolution;
+}
+
+uint64_t coordinate_plane_halt_after(coordinate_plane_s *plane)
+{
+	return plane->halt_after;
 }
 
 uint32_t coordinate_plane_skip_rounds(coordinate_plane_s *plane)

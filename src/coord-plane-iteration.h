@@ -66,6 +66,7 @@ coordinate_plane_s *coordinate_plane_new(const char *program_name,
 					 long double resolution,
 					 size_t pfunc_idx,
 					 ldxy_s seed,
+					 uint64_t halt_after,
 					 uint32_t skip_rounds,
 					 uint32_t num_threads);
 
@@ -113,6 +114,7 @@ size_t coordinate_plane_function_index(coordinate_plane_s *plane);
 void coordinate_plane_center(coordinate_plane_s *plane, ldxy_s *out);
 void coordinate_plane_seed(coordinate_plane_s *plane, ldxy_s *out);
 long double coordinate_plane_resolution(coordinate_plane_s *plane);
+uint64_t coordinate_plane_halt_after(coordinate_plane_s *plane);
 uint32_t coordinate_plane_skip_rounds(coordinate_plane_s *plane);
 size_t coordinate_plane_escaped_count(coordinate_plane_s *plane);
 size_t coordinate_plane_not_escaped_count(coordinate_plane_s *plane);

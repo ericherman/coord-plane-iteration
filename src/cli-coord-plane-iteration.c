@@ -53,7 +53,9 @@ int coord_plane_char_update(coordinate_plane_s *plane, char c)
 
 void fclear_screen(FILE *out)
 {
+	fflush(out);
 	fprintf(out, "\033[H\033[J");
+	fflush(out);
 }
 
 void fprint_coordinate_plane_ascii(FILE *out, coordinate_plane_s *plane)
@@ -93,17 +95,31 @@ int main(int argc, char **argv)
 
 	size_t it_per_frame = 1;
 
-	for (unsigned long c = 0, i = 0; c != 'q'; ++i) {
+	int halt = 0;
+	for (unsigned long i = 0; !halt; ++i) {
+		int c = 0;
 		coordinate_plane_iterate(plane, it_per_frame);
 		fprint_coordinate_plane_ascii(stdout, plane);
 		const char *title = coordinate_plane_function_name(plane);
-		fprintf(stdout,
-			"%s %lu. <enter> to continue or 'q<enter>' to quit: ",
-			title, i);
+		size_t escaped = coordinate_plane_escaped_count(plane);
+		size_t not_escaped = coordinate_plane_not_escaped_count(plane);
+		fprintf(stdout, "%s %lu escaped: %zu not: %zu", title, i,
+			escaped, not_escaped);
 		fflush(stdout);
-		c = getchar();
-		coord_plane_char_update(plane, c);
+		if (!coordinate_plane_halt_after(plane)) {
+			fprintf(stdout,
+				" <enter> to continue, 'q<enter>' to quit: ");
+			fflush(stdout);
+			c = getchar();
+			if (c == 'q') {
+				halt = 1;
+			}
+			coord_plane_char_update(plane, c);
+		} else if (i >= coordinate_plane_halt_after(plane)) {
+			halt = 1;
+		}
 	}
+	fprintf(stdout, "\n");
 
 	if (Make_valgrind_happy) {
 		coordinate_plane_free(plane);
