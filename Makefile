@@ -72,8 +72,9 @@ cli-demo: cli-coord-plane-iteration
 	./cli-coord-plane-iteration --halt_after=1000
 
 check: cli-coord-plane-iteration $(BEST_CHECK)
-	./cli-coord-plane-iteration --halt_after=1000 | tail -n1 > check.out
-	grep "escaped: 1349 not: 571" check.out
+	./cli-coord-plane-iteration --height=24 --width=79 --halt_after=1000 \
+		| tail -n1 > check.out
+	grep "escaped: 1642 not: 254" check.out
 	@echo SUCCESS $@
 
 tidy:

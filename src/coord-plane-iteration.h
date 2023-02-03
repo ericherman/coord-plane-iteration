@@ -56,14 +56,16 @@ coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
 					   uint32_t win_width,
 					   uint32_t win_height,
 					   ldxy_s center,
-					   long double resolution,
+					   long double resolution_x,
+					   long double resolution_y,
 					   size_t pfuncs_idx, ldxy_s seed);
 
 coordinate_plane_s *coordinate_plane_new(const char *program_name,
 					 uint32_t win_width,
 					 uint32_t win_height,
 					 ldxy_s center,
-					 long double resolution,
+					 long double resolution_x,
+					 long double resolution_y,
 					 size_t pfunc_idx,
 					 ldxy_s seed,
 					 uint64_t halt_after,
@@ -73,7 +75,7 @@ coordinate_plane_s *coordinate_plane_new(const char *program_name,
 void coordinate_plane_free(coordinate_plane_s *plane);
 
 void coordinate_plane_resize(coordinate_plane_s *plane, uint32_t new_win_width,
-			     uint32_t new_win_height);
+			     uint32_t new_win_height, bool preserve_ratio);
 
 size_t coordinate_plane_iterate(coordinate_plane_s *plane, uint32_t steps);
 
@@ -113,7 +115,8 @@ const char *coordinate_plane_function_name(coordinate_plane_s *plane);
 size_t coordinate_plane_function_index(coordinate_plane_s *plane);
 void coordinate_plane_center(coordinate_plane_s *plane, ldxy_s *out);
 void coordinate_plane_seed(coordinate_plane_s *plane, ldxy_s *out);
-long double coordinate_plane_resolution(coordinate_plane_s *plane);
+long double coordinate_plane_resolution_x(coordinate_plane_s *plane);
+long double coordinate_plane_resolution_y(coordinate_plane_s *plane);
 uint64_t coordinate_plane_halt_after(coordinate_plane_s *plane);
 uint32_t coordinate_plane_skip_rounds(coordinate_plane_s *plane);
 size_t coordinate_plane_escaped_count(coordinate_plane_s *plane);

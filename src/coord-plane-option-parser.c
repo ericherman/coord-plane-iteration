@@ -54,6 +54,8 @@ typedef struct coord_options {
 	int win_height;
 	long double x_min;
 	long double x_max;
+	long double y_min;
+	long double y_max;
 	long double center_x;
 	long double center_y;
 	long double seed_x;
@@ -72,6 +74,8 @@ static void coord_options_init(coord_options_s *options)
 	options->win_height = -1;
 	options->x_min = NAN;
 	options->x_max = NAN;
+	options->y_min = NAN;
+	options->y_max = NAN;
 	options->center_x = NAN;
 	options->center_y = NAN;
 	options->function = -1;
@@ -96,7 +100,7 @@ static void coord_options_rationalize(coord_options_s *options)
 #ifndef NO_GUI
 		options->win_width = 800;
 #else
-		options->win_width = 80;
+		options->win_width = 79;
 #endif
 	}
 	if (options->win_height < 1) {
@@ -111,6 +115,16 @@ static void coord_options_rationalize(coord_options_s *options)
 	}
 	if (!isfinite(options->x_max)) {
 		options->x_max = options->x_min + 4.0;
+	}
+	if (!isfinite(options->y_min)) {
+		double xy_ratio =
+		    ((1.0 * options->win_height) / options->win_width);
+		double x_range = fabsl(options->x_max - options->x_min);
+		double y_range = (x_range * xy_ratio);
+		options->y_min = -(fmax(1.5, y_range / 2));
+	}
+	if (!isfinite(options->y_max)) {
+		options->y_max = -(options->y_min);
 	}
 	if (!isfinite(options->center_x)) {
 		options->center_x = -0.5;
@@ -291,12 +305,15 @@ coordinate_plane_s *coordinate_plane_new_from_args(int argc, char **argv,
 
 	ldxy_s seed = { options.seed_x, options.seed_y };
 	ldxy_s center = { options.center_x, options.center_y };
-	long double resolution =
+	long double resolution_x =
 	    (options.x_max - options.x_min) / (1.0 * options.win_width);
+	long double resolution_y =
+	    (options.y_max - options.y_min) / (1.0 * options.win_height);
 
 	coordinate_plane_s *plane =
 	    coordinate_plane_new(argv[0], options.win_width, options.win_height,
-				 center, resolution, options.function, seed,
+				 center, resolution_x, resolution_y,
+				 options.function, seed,
 				 options.halt_after, options.skip_rounds,
 				 options.threads);
 

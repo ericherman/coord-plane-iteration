@@ -387,7 +387,9 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane,
 		}
 		if (event_ctx.resized) {
 			SDL_GetWindowSize(window, &window_x, &window_y);
-			coordinate_plane_resize(plane, window_x, window_y);
+			bool preseve_ratio = false;
+			coordinate_plane_resize(plane, window_x, window_y,
+						preseve_ratio);
 			change = coordinate_plane_change_yes;
 			event_ctx.resized = false;
 		}

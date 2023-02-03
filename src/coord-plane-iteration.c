@@ -174,7 +174,8 @@ struct coordinate_plane {
 	uint32_t win_height;
 
 	ldxy_s center;
-	long double resolution;
+	long double resolution_x;
+	long double resolution_y;
 
 	uint64_t iteration_count;
 	size_t escaped;
@@ -222,37 +223,44 @@ struct coordinate_plane_iterate_context {
 
 long double coordinate_plane_x_min(coordinate_plane_s *plane)
 {
-	return plane->center.x - (plane->resolution * (plane->win_width / 2));
+	return plane->center.x - (plane->resolution_x * (plane->win_width / 2));
 }
 
 long double coordinate_plane_y_min(coordinate_plane_s *plane)
 {
-	return plane->center.y - (plane->resolution * (plane->win_height / 2));
+	return plane->center.y -
+	    (plane->resolution_y * (plane->win_height / 2));
 }
 
 long double coordinate_plane_x_max(coordinate_plane_s *plane)
 {
-	return plane->center.x + (plane->resolution * (plane->win_width / 2));
+	return plane->center.x + (plane->resolution_x * (plane->win_width / 2));
 }
 
 long double coordinate_plane_y_max(coordinate_plane_s *plane)
 {
-	return plane->center.y + (plane->resolution * (plane->win_height / 2));
+	return plane->center.y +
+	    (plane->resolution_y * (plane->win_height / 2));
 }
 
 coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
 					   uint32_t win_width,
 					   uint32_t win_height,
 					   ldxy_s center,
-					   long double resolution,
+					   long double resolution_x,
+					   long double resolution_y,
 					   size_t pfuncs_idx, ldxy_s seed)
 {
 	plane->win_width = win_width;
 	plane->win_height = win_height;
 	plane->center = center;
-	plane->resolution = resolution;
-	if (!(plane->resolution > 0.0)) {
-		die("invalid resolution %.*Lg", DECIMAL_DIG, resolution);
+	plane->resolution_x = resolution_x;
+	plane->resolution_y = resolution_y;
+	if (!(plane->resolution_x > 0.0)) {
+		die("invalid resolution_x %.*Lg", DECIMAL_DIG, resolution_x);
+	}
+	if (!(plane->resolution_y > 0.0)) {
+		die("invalid resolution_y %.*Lg", DECIMAL_DIG, resolution_y);
 	}
 	plane->iteration_count = 0;
 	plane->escaped = 0;
@@ -301,14 +309,14 @@ coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
 
 			/* location on the co-ordinate plane */
 			ldxy_s xy;
-			xy.y = y_max - (py * plane->resolution);
-			if (fabsl(xy.y) < (plane->resolution / 2)) {
+			xy.y = y_max - (py * plane->resolution_y);
+			if (fabsl(xy.y) < (plane->resolution_y / 2)) {
 				/* near enought to zero to call it zero */
 				xy.y = 0.0;
 			}
 
-			xy.x = x_min + px * plane->resolution;
-			if (fabsl(xy.x) < (plane->resolution / 2)) {
+			xy.x = x_min + px * plane->resolution_x;
+			if (fabsl(xy.x) < (plane->resolution_x / 2)) {
 				/* near enought to zero to call it zero */
 				xy.x = 0.0;
 			}
@@ -323,7 +331,8 @@ coordinate_plane_s *coordinate_plane_new(const char *program_name,
 					 uint32_t win_width,
 					 uint32_t win_height,
 					 ldxy_s center,
-					 long double resolution,
+					 long double resolution_x,
+					 long double resolution_y,
 					 size_t pfunc_idx,
 					 ldxy_s seed,
 					 uint64_t halt_after,
@@ -348,7 +357,7 @@ coordinate_plane_s *coordinate_plane_new(const char *program_name,
 	plane->num_threads = num_threads;
 
 	coordinate_plane_reset(plane, win_width, win_height, center,
-			       resolution, pfunc_idx, seed);
+			       resolution_x, resolution_y, pfunc_idx, seed);
 
 	return plane;
 }
@@ -378,13 +387,22 @@ void coordinate_plane_free(coordinate_plane_s *plane)
 }
 
 void coordinate_plane_resize(coordinate_plane_s *plane, uint32_t new_win_width,
-			     uint32_t new_win_height)
+			     uint32_t new_win_height, bool preserve_ratio)
 {
 	long double x_min = coordinate_plane_x_min(plane);
 	long double x_max = coordinate_plane_x_max(plane);
-	long double new_resolution = (x_max - x_min) / (1.0 * new_win_width);
+	long double new_resolution_x = (x_max - x_min) / (1.0 * new_win_width);
+
+	long double new_resolution_y = new_resolution_x;
+	if (preserve_ratio) {
+		long double y_min = coordinate_plane_y_min(plane);
+		long double y_max = coordinate_plane_y_max(plane);
+		new_resolution_y = (y_max - y_min) / (1.0 * new_win_height);
+	}
+
 	coordinate_plane_reset(plane, new_win_width, new_win_height,
-			       plane->center, new_resolution, plane->pfuncs_idx,
+			       plane->center, new_resolution_x,
+			       new_resolution_y, plane->pfuncs_idx,
 			       plane->seed);
 }
 
@@ -565,25 +583,36 @@ void coordinate_plane_next_function(coordinate_plane_s *plane)
 	}
 
 	coordinate_plane_reset(plane, plane->win_width, plane->win_height,
-			       center, plane->resolution, new_pfuncs_idx, seed);
+			       center, plane->resolution_x, plane->resolution_y,
+			       new_pfuncs_idx, seed);
 }
 
 void coordinate_plane_zoom_in(coordinate_plane_s *plane)
 {
-	long double new_resolution = plane->resolution * 0.8;
+	long double ratio_x = 0.8;
+	long double ratio_y = 0.8;
+
+	long double new_resolution_x = plane->resolution_x * ratio_x;
+	long double new_resolution_y = plane->resolution_y * ratio_y;
 
 	coordinate_plane_reset(plane, plane->win_width, plane->win_height,
-			       plane->center, new_resolution,
-			       plane->pfuncs_idx, plane->seed);
+			       plane->center, new_resolution_x,
+			       new_resolution_y, plane->pfuncs_idx,
+			       plane->seed);
 }
 
 void coordinate_plane_zoom_out(coordinate_plane_s *plane)
 {
-	long double new_resolution = plane->resolution * 1.25;
+	long double ratio_x = 1.25;
+	long double ratio_y = 1.25;
+
+	long double new_resolution_x = plane->resolution_x * ratio_x;
+	long double new_resolution_y = plane->resolution_y * ratio_y;
 
 	coordinate_plane_reset(plane, plane->win_width, plane->win_height,
-			       plane->center, new_resolution,
-			       plane->pfuncs_idx, plane->seed);
+			       plane->center, new_resolution_x,
+			       new_resolution_y, plane->pfuncs_idx,
+			       plane->seed);
 }
 
 void coordinate_plane_pan_left(coordinate_plane_s *plane)
@@ -597,8 +626,9 @@ void coordinate_plane_pan_left(coordinate_plane_s *plane)
 	new_center.x = (plane->center.x - (x_span / 8));
 
 	coordinate_plane_reset(plane, plane->win_width, plane->win_height,
-			       new_center, plane->resolution,
-			       plane->pfuncs_idx, plane->seed);
+			       new_center, plane->resolution_x,
+			       plane->resolution_y, plane->pfuncs_idx,
+			       plane->seed);
 }
 
 void coordinate_plane_pan_right(coordinate_plane_s *plane)
@@ -612,8 +642,9 @@ void coordinate_plane_pan_right(coordinate_plane_s *plane)
 	new_center.x = (plane->center.x + (x_span / 8));
 
 	coordinate_plane_reset(plane, plane->win_width, plane->win_height,
-			       new_center, plane->resolution,
-			       plane->pfuncs_idx, plane->seed);
+			       new_center, plane->resolution_x,
+			       plane->resolution_y, plane->pfuncs_idx,
+			       plane->seed);
 }
 
 void coordinate_plane_pan_up(coordinate_plane_s *plane)
@@ -627,8 +658,9 @@ void coordinate_plane_pan_up(coordinate_plane_s *plane)
 	new_center.y = (plane->center.y + (y_span / 8));
 
 	coordinate_plane_reset(plane, plane->win_width, plane->win_height,
-			       new_center, plane->resolution,
-			       plane->pfuncs_idx, plane->seed);
+			       new_center, plane->resolution_x,
+			       plane->resolution_y, plane->pfuncs_idx,
+			       plane->seed);
 }
 
 void coordinate_plane_pan_down(coordinate_plane_s *plane)
@@ -642,8 +674,9 @@ void coordinate_plane_pan_down(coordinate_plane_s *plane)
 	new_center.y = (plane->center.y - (y_span / 8));
 
 	coordinate_plane_reset(plane, plane->win_width, plane->win_height,
-			       new_center, plane->resolution,
-			       plane->pfuncs_idx, plane->seed);
+			       new_center, plane->resolution_x,
+			       plane->resolution_y, plane->pfuncs_idx,
+			       plane->seed);
 }
 
 void coordinate_plane_recenter(coordinate_plane_s *plane,
@@ -654,9 +687,9 @@ void coordinate_plane_recenter(coordinate_plane_s *plane,
 
 	iterxy_s *p = plane->all_points + ((plane->win_width * y) + x);
 
-	coordinate_plane_reset(plane, plane->win_width, plane->win_height,
-			       p->c, plane->resolution, plane->pfuncs_idx,
-			       plane->seed);
+	coordinate_plane_reset(plane, plane->win_width, plane->win_height, p->c,
+			       plane->resolution_x, plane->resolution_y,
+			       plane->pfuncs_idx, plane->seed);
 }
 
 uint32_t coordinate_plane_win_width(coordinate_plane_s *plane)
@@ -719,9 +752,14 @@ void coordinate_plane_seed(coordinate_plane_s *plane, ldxy_s *out)
 	out->y = plane->seed.y;
 }
 
-long double coordinate_plane_resolution(coordinate_plane_s *plane)
+long double coordinate_plane_resolution_x(coordinate_plane_s *plane)
 {
-	return plane->resolution;
+	return plane->resolution_x;
+}
+
+long double coordinate_plane_resolution_y(coordinate_plane_s *plane)
+{
+	return plane->resolution_y;
 }
 
 uint64_t coordinate_plane_halt_after(coordinate_plane_s *plane)
