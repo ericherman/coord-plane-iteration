@@ -12,9 +12,9 @@ LDLIBS += -lpthread
 endif
 
 ifeq ($(findstring /usr/include/SDL2/SDL.h,$(wildcard /usr/include/SDL2/*.h)),)
-BEST_CHECK=cli-demo
+BEST_DEMO=./cli-coord-plane-iteration
 else
-BEST_CHECK=sdl-demo
+BEST_DEMO=./sdl-coord-plane-iteration
 endif
 
 ifdef DEBUG
@@ -56,22 +56,26 @@ SDL_HEADERS=$(HEADERS) \
 
 sdl-coord-plane-iteration: $(SDL_SOURCES) $(SDL_HEADERS)
 	$(CC) $(CFLAGS) `sdl2-config --cflags` $(LDFLAGS) $(SDL_SOURCES) \
-		-o ./sdl-coord-plane-iteration $(LDLIBS) `sdl2-config --libs`
+		-o $@ $(LDLIBS) `sdl2-config --libs`
 
 sdl-demo: sdl-coord-plane-iteration
-	./sdl-coord-plane-iteration --halt_after=1000
+	./sdl-coord-plane-iteration
 
 CLI_SOURCES=$(SOURCES) src/cli-coord-plane-iteration.c
 CLI_HEADERS=$(HEADERS)
 
 cli-coord-plane-iteration: $(CLI_SOURCES) $(CLI_HEADERS)
 	$(CC) $(CFLAGS) -DNO_GUI=1 $(LDFLAGS) $(CLI_SOURCES) \
-		-o ./cli-coord-plane-iteration $(LDLIBS)
+		-o $@ $(LDLIBS)
 
 cli-demo: cli-coord-plane-iteration
-	./cli-coord-plane-iteration --halt_after=1000
+	./cli-coord-plane-iteration
 
-check: cli-coord-plane-iteration $(BEST_CHECK)
+demo: $(BEST_DEMO)
+	$(BEST_DEMO)
+
+check: cli-coord-plane-iteration
+	$(BEST_DEMO) --halt_after=1000
 	./cli-coord-plane-iteration --height=24 --width=79 --halt_after=1000 \
 		| tail -n1 > check.out
 	grep "escaped: 1642 not: 254" check.out
