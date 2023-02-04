@@ -108,10 +108,12 @@ tidy:
 		-T hsv_s -T rgb_s -T rgb24_s \
 		-T ldxy_s -T iterxy_s \
 		-T named_pfunc_s -T pfunc_f \
-		-T coordinate_plane_s -T coordinate_plane_iterate_context_s \
+		-T coordinate_plane_s \
+		-T coordinate_plane_iterate_context_s \
 		-T coord_options_s \
 		-T basic_thread_pool_s \
-		-T thread_pool_todo_s -T thread_pool_loop_context_s \
+		-T basic_thread_pool_todo_s \
+		-T basic_thread_pool_loop_context_s \
 		src/*.c src/*.h
 
 clean:

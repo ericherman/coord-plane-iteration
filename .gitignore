@@ -1,3 +1,5 @@
+build/
+debug/
 sdl-coord-plane-iteration
 cli-coord-plane-iteration
 check.out
