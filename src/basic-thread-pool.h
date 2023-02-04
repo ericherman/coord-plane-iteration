@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
 /* basic-thread-pool.h: a basic thread pool */
-/* Copyright (C) 2020 Eric Herman <eric@freesa.org> */
+/* Copyright (C) 2020-2023 Eric Herman <eric@freesa.org> */
 
 #ifndef BASIC_THREAD_POOL_H
 #define BASIC_THREAD_POOL_H

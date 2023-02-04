@@ -1,20 +1,21 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
 /* coord-plane-iteration.c: playing with mandlebrot and such */
-/* Copyright (C) 2020 Eric Herman <eric@freesa.org> */
+/* Copyright (C) 2020-2023 Eric Herman <eric@freesa.org> */
 
 #include <assert.h>
 #include <float.h>
 #include <math.h>
 #include <stdbool.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifndef SKIP_THREADS
 #include <stdatomic.h>
-#include <basic-thread-pool.h>
+#include "basic-thread-pool.h"
 #endif
 
-#include <alloc-or-die.h>
-#include <coord-plane-iteration.h>
+#include "alloc-or-die.h"
+#include "coord-plane-iteration.h"
 
 /* the y is understood to contain an i, the sqrt(-1) */
 static void square_complex(ldxy_s *out, ldxy_s in)
@@ -285,15 +286,16 @@ coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
 	}
 	if (!plane->all_points) {
 		size_t size = needed * sizeof(iterxy_s);
-		alloc_or_die(&plane->all_points, size);
+		plane->all_points = alloc_or_die("plane->all_points", size);
 		plane->all_points_len = needed;
 
 		size = needed * sizeof(iterxy_s *);
-		alloc_or_die(&plane->scratch, size);
+		plane->scratch = alloc_or_die("plane->scratch", size);
 		plane->scratch_len = needed;
 
 		size = needed * sizeof(iterxy_s *);
-		alloc_or_die(&plane->points_not_escaped, size);
+		plane->points_not_escaped =
+		    alloc_or_die("plane->points_not_escaped", size);
 		plane->points_not_escaped_len = needed;
 	}
 
@@ -342,7 +344,7 @@ coordinate_plane_s *coordinate_plane_new(const char *program_name,
 	coordinate_plane_s *plane = NULL;
 	size_t size = sizeof(coordinate_plane_s);
 
-	alloc_or_die(&plane, size);
+	plane = alloc_or_die("plane", size);
 	memset(plane, 0x00, size);
 
 	plane->argv0 = program_name;
@@ -352,7 +354,7 @@ coordinate_plane_s *coordinate_plane_new(const char *program_name,
 	coordinate_plane_iterate_context_s *contexts;
 	plane->contexts_len = num_threads ? num_threads : 1;
 	size = sizeof(coordinate_plane_iterate_context_s) * plane->contexts_len;
-	alloc_or_die(&contexts, size);
+	contexts = alloc_or_die("contexts", size);
 	plane->contexts = contexts;
 	plane->num_threads = num_threads;
 
@@ -499,13 +501,16 @@ static void coordinate_plane_iterate_multi_threaded(coordinate_plane_s *plane,
 		coordinate_plane_iterate_single_threaded(plane, steps);
 		return;
 	}
+
 	basic_thread_pool_s *pool = plane->tpool;
 	if (pool == NULL || basic_thread_pool_size(pool) < num_threads) {
 		if (pool) {
 			basic_thread_pool_stop_and_free(&(plane->tpool));
 		}
 		plane->tpool = basic_thread_pool_new(plane->num_threads);
-		assert(plane->tpool);
+		if (!plane->tpool) {
+			die("plane->tpool is %p", plane->tpool);
+		}
 	}
 
 	for (size_t i = 0; i < num_threads; ++i) {
@@ -713,7 +718,7 @@ void coordinate_plane_threads_more(coordinate_plane_s *plane)
 		    sizeof(coordinate_plane_iterate_context_s) *
 		    plane->contexts_len;
 		coordinate_plane_iterate_context_s *contexts;
-		alloc_or_die(&contexts, size);
+		contexts = alloc_or_die("contexts", size);
 		plane->contexts = contexts;
 	}
 }

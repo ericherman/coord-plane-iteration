@@ -1,14 +1,14 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
 /* cli-coord-plane-iteration.c: playing with mandlebrot and such */
-/* Copyright (C) 2020 Eric Herman <eric@freesa.org> */
+/* Copyright (C) 2020-2023 Eric Herman <eric@freesa.org> */
 /* https://github.com/ericherman/coord-plane-iteration */
 
 #define CLI_COORD_PLANE_ITERATION_VERSION "0.1.0"
 
 #include <signal.h>
 
-#include <logerr-die.h>
-#include <coord-plane-option-parser.h>
+#include "logerr-die.h"
+#include "coord-plane-option-parser.h"
 
 #ifndef Make_valgrind_happy
 #define Make_valgrind_happy 0

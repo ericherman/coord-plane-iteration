@@ -1,27 +1,28 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
 /* sdl-coord-plane-iteration.c: playing with mandlebrot and such */
-/* Copyright (C) 2020 Eric Herman <eric@freesa.org> */
+/* Copyright (C) 2020-2023 Eric Herman <eric@freesa.org> */
 /* https://github.com/ericherman/coord-plane-iteration */
 /*
-   cc -g -O2 `sdl2-config --cflags` -I. -DNDEBUG \
-      ./logerr-die.c ./basic-thread-pool.c \
-      ./coord-plane-iteration.c ./coord-plane-option-parser.c \
-      ./rgb-hsv.c ./pixel-coord-plane-iteration.c \
-      ./sdl-coord-plane-iteration.c \
-      -o ./sdl-coord-plane-iteration \
-      `sdl2-config --libs` -lm -lpthread &&
+   cc -DNDEBUG -O2 -g -Wextra -Wall -Wpedantic -rdynamic -Isrc/ \
+        `sdl2-config --cflags` \
+	src/logerr-die.c src/alloc-or-die.c src/rgb-hsv.c \
+	src/basic-thread-pool.c src/coord-plane-option-parser.c \
+	src/coord-plane-iteration.c src/pixel-coord-plane-iteration.c \
+	src/sdl-coord-plane-iteration.c \
+	-o build/sdl-coord-plane-iteration \
+	-lm -lpthread `sdl2-config --libs` && \
    ./sdl-coord-plane-iteration
 */
 
-#define SDL_COORD_PLANE_ITERATION_VERSION "0.1.1"
+#define SDL_COORD_PLANE_ITERATION_VERSION "0.2.0"
 
 #include <signal.h>
 #include <sys/time.h>
 #include <SDL.h>
 
-#include <alloc-or-die.h>
-#include <coord-plane-option-parser.h>
-#include <pixel-coord-plane-iteration.h>
+#include "alloc-or-die.h"
+#include "coord-plane-option-parser.h"
+#include "pixel-coord-plane-iteration.h"
 
 #ifndef Make_valgrind_happy
 #define Make_valgrind_happy 0

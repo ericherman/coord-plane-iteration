@@ -1,10 +1,10 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
 /* rgb-hsv.c: colors */
-/* Copyright (C) 2020 Eric Herman <eric@freesa.org> */
+/* Copyright (C) 2020-2023 Eric Herman <eric@freesa.org> */
 
 #include <math.h>
 
-#include <rgb-hsv.h>
+#include "rgb-hsv.h"
 
 int rgb24_from_rgb(rgb24_s *out, rgb_s in)
 {

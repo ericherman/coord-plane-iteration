@@ -33,6 +33,7 @@ HEADERS=src/logerr-die.h \
 	src/pixel-coord-plane-iteration.h
 
 SOURCES=src/logerr-die.c \
+	src/alloc-or-die.c \
 	src/rgb-hsv.c \
 	src/basic-thread-pool.c \
 	src/coord-plane-option-parser.c \

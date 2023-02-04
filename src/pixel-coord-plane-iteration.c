@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
 /* pixel-coord-plane-iteration.h: playing with mandlebrot and such */
-/* Copyright (C) 2020 Eric Herman <eric@freesa.org> */
+/* Copyright (C) 2020-2023 Eric Herman <eric@freesa.org> */
 /* https://github.com/ericherman/coord-plane-iteration */
 
 #include <stdio.h>
@@ -8,10 +8,10 @@
 #include <math.h>
 #include <inttypes.h>
 
-#include <rgb-hsv.h>
-#include <alloc-or-die.h>
-#include <coord-plane-option-parser.h>
-#include <pixel-coord-plane-iteration.h>
+#include "alloc-or-die.h"
+#include "coord-plane-option-parser.h"
+#include "pixel-coord-plane-iteration.h"
+#include "rgb-hsv.h"
 
 static void long_tail_gradiant(rgb24_s *result, uint32_t distance)
 {
@@ -206,7 +206,7 @@ void *pixel_buffer_resize(pixel_buffer_s *buf, int height, int width)
 	buf->pitch = buf->width * buf->bytes_per_pixel;
 	size_t size = buf->pixels_len * buf->bytes_per_pixel;
 
-	alloc_or_die(&buf->pixels, size);
+	buf->pixels = alloc_or_die("buf->pixels", size);
 
 	return buf->pixels;
 }
@@ -218,9 +218,8 @@ static rgb24_s *grow_palette(rgb24_s *palette, size_t *len,
 	size_t size = sizeof(rgb24_s) * new_len;
 	rgb24_s *grow = realloc(palette, size);
 	if (!grow) {
-		fprintf(stderr,
-			"could not allocate %zu bytes for palette[%zu]?",
-			size, new_len);
+		errorf("could not allocate %zu bytes for palette[%zu]?",
+		       size, new_len);
 		return palette;
 	}
 	palette = grow;
@@ -243,7 +242,7 @@ pixel_buffer_s *pixel_buffer_new(uint32_t window_x, uint32_t window_y,
 {
 	pixel_buffer_s *buf = NULL;
 	size_t size = sizeof(pixel_buffer_s);
-	alloc_or_die(&buf, size);
+	buf = alloc_or_die("buf", size);
 
 	buf->bytes_per_pixel = sizeof(uint32_t);
 	pixel_buffer_resize(buf, window_y, window_x);
