@@ -167,23 +167,23 @@ static int coord_options_parse_argv(coord_options_s *options,
 	int option_index;
 
 	/* yes, optstirng is horrible */
-	const char *optstring = "HVw::h::x::y::f::t::j::r::i::c::a::s::";
+	const char *optstring = "HVw:h:x:y:f:t:j:r:i:c:a:s:";
 
 	struct option long_options[] = {
 		{ "help", no_argument, 0, 'H' },
 		{ "version", no_argument, 0, 'V' },
-		{ "width", optional_argument, 0, 'w' },
-		{ "height", optional_argument, 0, 'h' },
-		{ "center_x", optional_argument, 0, 'x' },
-		{ "center_y", optional_argument, 0, 'y' },
-		{ "from", optional_argument, 0, 'f' },
-		{ "to", optional_argument, 0, 't' },
-		{ "function", optional_argument, 0, 'j' },
-		{ "seed_x", optional_argument, 0, 'r' },
-		{ "seed_y", optional_argument, 0, 'i' },
-		{ "threads", optional_argument, 0, 'c' },
-		{ "halt_after", optional_argument, 0, 'a' },
-		{ "skip_rounds", optional_argument, 0, 's' },
+		{ "width", required_argument, 0, 'w' },
+		{ "height", required_argument, 0, 'h' },
+		{ "center_x", required_argument, 0, 'x' },
+		{ "center_y", required_argument, 0, 'y' },
+		{ "from", required_argument, 0, 'f' },
+		{ "to", required_argument, 0, 't' },
+		{ "function", required_argument, 0, 'j' },
+		{ "seed_x", required_argument, 0, 'r' },
+		{ "seed_y", required_argument, 0, 'i' },
+		{ "threads", required_argument, 0, 'c' },
+		{ "halt_after", required_argument, 0, 'a' },
+		{ "skip_rounds", required_argument, 0, 's' },
 		{ 0, 0, 0, 0 }
 	};
 
