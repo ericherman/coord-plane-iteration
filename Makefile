@@ -1,4 +1,4 @@
-default: check
+default: all
 
 CC=cc
 
@@ -11,21 +11,13 @@ else
 LDLIBS += -lpthread
 endif
 
-ifeq ($(findstring /usr/include/SDL2/SDL.h,$(wildcard /usr/include/SDL2/*.h)),)
-BEST_DEMO=./cli-coord-plane-iteration
-else
-BEST_DEMO=./sdl-coord-plane-iteration
-endif
+BUILD_CFLAGS += -DNDEBUG -O2
+DEBUG_CFLAGS += -DDEBUG -O0 -DMake_valgrind_happy=1
 
-ifdef DEBUG
-MAKEFILE_DEBUG=$(DEBUG)
+ifeq ($(findstring /usr/include/SDL2/SDL.h,$(wildcard /usr/include/SDL2/*.h)),)
+BEST_DEMO=build/cli-coord-plane-iteration
 else
-MAKEFILE_DEBUG=0
-endif
-ifeq ($(MAKEFILE_DEBUG),0)
-CFLAGS += -DNDEBUG -O2
-else
-CFLAGS += -DDEBUG -O0 -DMake_valgrind_happy=1
+BEST_DEMO=build/sdl-coord-plane-iteration
 endif
 
 # extracted from https://github.com/torvalds/linux/blob/master/scripts/Lindent
@@ -53,32 +45,56 @@ SDL_SOURCES=$(SOURCES) \
 SDL_HEADERS=$(HEADERS) \
 	src/pixel-coord-plane-iteration.h
 
-
-sdl-coord-plane-iteration: $(SDL_SOURCES) $(SDL_HEADERS)
-	$(CC) $(CFLAGS) `sdl2-config --cflags` $(LDFLAGS) $(SDL_SOURCES) \
-		-o $@ $(LDLIBS) `sdl2-config --libs`
-
-sdl-demo: sdl-coord-plane-iteration
-	./sdl-coord-plane-iteration
-
 CLI_SOURCES=$(SOURCES) src/cli-coord-plane-iteration.c
 CLI_HEADERS=$(HEADERS)
 
-cli-coord-plane-iteration: $(CLI_SOURCES) $(CLI_HEADERS)
-	$(CC) $(CFLAGS) -DNO_GUI=1 $(LDFLAGS) $(CLI_SOURCES) \
-		-o $@ $(LDLIBS)
+build/sdl-coord-plane-iteration: $(SDL_SOURCES) $(SDL_HEADERS)
+	mkdir -pv build
+	$(CC) $(BUILD_CFLAGS) $(CFLAGS) `sdl2-config --cflags` $(LDFLAGS) \
+		$(SDL_SOURCES) -o $@ $(LDLIBS) `sdl2-config --libs`
 
-cli-demo: cli-coord-plane-iteration
-	./cli-coord-plane-iteration
+debug/sdl-coord-plane-iteration: $(SDL_SOURCES) $(SDL_HEADERS)
+	mkdir -pv debug
+	$(CC) $(DEBUG_CFLAGS) $(CFLAGS) `sdl2-config --cflags` $(LDFLAGS) \
+		$(SDL_SOURCES) -o $@ $(LDLIBS) `sdl2-config --libs`
+
+build/cli-coord-plane-iteration: $(CLI_SOURCES) $(CLI_HEADERS)
+	mkdir -pv build
+	$(CC) $(BUILD_CFLAGS) $(CFLAGS) -DNO_GUI=1 $(LDFLAGS) \
+		$(CLI_SOURCES) -o $@ $(LDLIBS)
+
+debug/cli-coord-plane-iteration: $(CLI_SOURCES) $(CLI_HEADERS)
+	mkdir -pv debug
+	$(CC) $(DEBUG_CFLAGS) $(CFLAGS) -DNO_GUI=1 $(LDFLAGS) \
+		$(CLI_SOURCES) -o $@ $(LDLIBS)
+
+all-sdl: build/sdl-coord-plane-iteration debug/sdl-coord-plane-iteration
+
+all-cli: build/cli-coord-plane-iteration debug/cli-coord-plane-iteration
+
+all-build: build/cli-coord-plane-iteration build/sdl-coord-plane-iteration
+
+all-debug: debug/cli-coord-plane-iteration debug/sdl-coord-plane-iteration
+
+all: all-build all-debug
+
+sdl-demo: build/sdl-coord-plane-iteration
+	$<
+
+cli-demo: build/cli-coord-plane-iteration
+	$<
 
 demo: $(BEST_DEMO)
 	$(BEST_DEMO)
 
-check: cli-coord-plane-iteration
+build/check.out: build/cli-coord-plane-iteration
+	build/cli-coord-plane-iteration --height=24 --width=79 \
+		--halt_after=1000 \
+		| tail -n1 > build/check.out
+
+check: build/check.out $(BEST_DEMO)
 	$(BEST_DEMO) --halt_after=1000
-	./cli-coord-plane-iteration --height=24 --width=79 --halt_after=1000 \
-		| tail -n1 > check.out
-	grep "escaped: 1642 not: 254" check.out
+	grep "escaped: 1642 not: 254" build/check.out
 	@echo SUCCESS $@
 
 tidy:
