@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
 /* sdl-coord-plane-option-parser.h */
-/* Copyright (C) 2020-2023 Eric Herman <eric@freesa.org> */
+/* Copyright (C) 2020-2026 Eric Herman <eric@freesa.org> */
 
 #ifndef COORD_PLANE_OPTION_PARSER_H
 #define COORD_PLANE_OPTION_PARSER_H 1

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
 /* alloc-or-die.h: alloc_or_die malloc_or_die calloc_or_die malloc_or_log */
-/* Copyright (C) 2020 Eric Herman <eric@freesa.org> */
+/* Copyright (C) 2020-2026 Eric Herman <eric@freesa.org> */
 
 #include "logerr-die.h"
 

@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
 /* pixel-coord-plane-iteration.h: playing with mandlebrot and such */
-/* Copyright (C) 2020-2023 Eric Herman <eric@freesa.org> */
+/* Copyright (C) 2020-2026 Eric Herman <eric@freesa.org> */
 
 #ifndef PIXEL_COORD_PLANE_INTERATION_H
 #define PIXEL_COORD_PLANE_INTERATION_H 1
