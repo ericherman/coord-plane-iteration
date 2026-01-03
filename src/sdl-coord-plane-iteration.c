@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
 /* sdl-coord-plane-iteration.c: playing with mandlebrot and such */
-/* Copyright (C) 2020-2023 Eric Herman <eric@freesa.org> */
+/* Copyright (C) 2020-2026 Eric Herman <eric@freesa.org> */
 /* https://github.com/ericherman/coord-plane-iteration */
 /*
    cc -DNDEBUG -O2 -g -Wextra -Wall -Wpedantic -rdynamic -Isrc/ \
@@ -398,6 +398,7 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane,
 			iterations_at_last_print = 0;
 			title = coordinate_plane_function_name(plane);
 			SDL_SetWindowTitle(window, title);
+			printf("\n");
 			print_directions(plane, stdout);
 			fflush(stdout);
 		}
@@ -509,4 +510,6 @@ int main(int argc, char **argv)
 		pixel_buffer_free(virtual_win);
 		coordinate_plane_free(plane);
 	}
+
+	return 0;
 }
