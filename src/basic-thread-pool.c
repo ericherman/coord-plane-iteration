@@ -188,7 +188,7 @@ basic_thread_pool_s *basic_thread_pool_new(size_t num_threads)
 
 basic_thread_pool_new_end:
 	if (err) {
-		basic_thread_pool_stop_and_free(&pool);
+		basic_thread_pool_stop_and_free(&pool, 0);
 		return NULL;
 	}
 	return pool;
@@ -246,7 +246,8 @@ size_t basic_thread_pool_size(basic_thread_pool_s *pool)
 	return pool->threads_len;
 }
 
-void basic_thread_pool_stop_and_free(basic_thread_pool_s **pool_ref)
+void basic_thread_pool_stop_and_free(basic_thread_pool_s **pool_ref,
+				     int skip_join)
 {
 	basic_thread_pool_s *pool = *pool_ref;
 	size_t id = 0;
@@ -304,20 +305,21 @@ void basic_thread_pool_stop_and_free(basic_thread_pool_s **pool_ref)
 		pool->done = NULL;
 	}
 
-#ifdef DEBUG
-	for (size_t i = 0; i < pool->threads_len; ++i) {
+	for (size_t i = 0; (!skip_join) && i < pool->threads_len; ++i) {
 		int result = 0;
 		thrd_t thread = pool->threads[i];
 		if (thread) {
 			Tc(thrd_join(thread, &result), id);
 		}
+#ifdef DEBUG
 		if (result) {
 			/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/V2_chap02.html#tag_15_05_01 */
 			fflush(stdout);
-			fprintf(stderr, "thread[%zu] returned %d\n", i, result);
+			fprintf(stderr, "\nthread[%zu] returned %d\n", i,
+				result);
 		}
-	}
 #endif
+	}
 
 	if (pool->threads) {
 		free(pool->threads);

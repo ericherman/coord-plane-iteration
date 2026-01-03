@@ -370,7 +370,9 @@ void coordinate_plane_free(coordinate_plane_s *plane)
 		free(plane->contexts);
 #ifndef SKIP_THREADS
 		if (plane->tpool) {
-			basic_thread_pool_stop_and_free(&(plane->tpool));
+			int skip_join = 0;
+			basic_thread_pool_stop_and_free(&(plane->tpool),
+							skip_join);
 		}
 #endif
 		free(plane->all_points);
@@ -505,7 +507,9 @@ static void coordinate_plane_iterate_multi_threaded(coordinate_plane_s *plane,
 	basic_thread_pool_s *pool = plane->tpool;
 	if (pool == NULL || basic_thread_pool_size(pool) < num_threads) {
 		if (pool) {
-			basic_thread_pool_stop_and_free(&(plane->tpool));
+			int skip_join = 0;
+			basic_thread_pool_stop_and_free(&(plane->tpool),
+							skip_join);
 		}
 		plane->tpool = basic_thread_pool_new(plane->num_threads);
 		if (!plane->tpool) {

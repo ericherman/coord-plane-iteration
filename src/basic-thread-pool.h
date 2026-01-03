@@ -19,6 +19,7 @@ int basic_thread_pool_wait(basic_thread_pool_s *pool);
 
 size_t basic_thread_pool_size(basic_thread_pool_s *pool);
 
-void basic_thread_pool_stop_and_free(basic_thread_pool_s **pool_ref);
+void basic_thread_pool_stop_and_free(basic_thread_pool_s **pool_ref,
+				     int skip_join);
 
 #endif /* BASIC_THREAD_POOL_H */
