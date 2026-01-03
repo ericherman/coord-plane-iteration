@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
 /* cli-coord-plane-iteration.c: playing with mandlebrot and such */
-/* Copyright (C) 2020-2023 Eric Herman <eric@freesa.org> */
+/* Copyright (C) 2020-2026 Eric Herman <eric@freesa.org> */
 /* https://github.com/ericherman/coord-plane-iteration */
 
 #define CLI_COORD_PLANE_ITERATION_VERSION "0.1.0"
@@ -124,4 +124,6 @@ int main(int argc, char **argv)
 	if (Make_valgrind_happy) {
 		coordinate_plane_free(plane);
 	}
+
+	return 0;
 }
