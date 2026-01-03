@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
 /* basic-thread-pool.c: a basic thread pool */
-/* Copyright (C) 2020-2023 Eric Herman <eric@freesa.org> */
+/* Copyright (C) 2020-2026 Eric Herman <eric@freesa.org> */
 
 #include "basic-thread-pool.h"
 
@@ -304,11 +304,6 @@ void basic_thread_pool_stop_and_free(basic_thread_pool_s **pool_ref)
 		pool->done = NULL;
 	}
 
-	if (pool->mutex) {
-		mtx_destroy(pool->mutex);
-		free(pool->mutex);
-		pool->mutex = NULL;
-	}
 #ifdef DEBUG
 	for (size_t i = 0; i < pool->threads_len; ++i) {
 		int result = 0;
@@ -331,6 +326,11 @@ void basic_thread_pool_stop_and_free(basic_thread_pool_s **pool_ref)
 	if (pool->thread_contexts) {
 		free(pool->thread_contexts);
 		pool->thread_contexts = NULL;
+	}
+	if (pool->mutex) {
+		mtx_destroy(pool->mutex);
+		free(pool->mutex);
+		pool->mutex = NULL;
 	}
 	free(pool);
 	*pool_ref = NULL;
