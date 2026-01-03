@@ -16,7 +16,6 @@
 
 #define SDL_COORD_PLANE_ITERATION_VERSION "0.2.0"
 
-#include <signal.h>
 #include <sys/time.h>
 #include <SDL.h>
 
@@ -28,7 +27,7 @@
 #define Make_valgrind_happy 0
 #endif
 
-uint64_t time_in_usec(void)
+static uint64_t time_in_usec(void)
 {
 	struct timeval tv = { 0, 0 };
 	struct timezone *tz = NULL;
@@ -494,7 +493,7 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane,
 
 int main(int argc, char **argv)
 {
-	signal(SIGSEGV, backtrace_exit_handler);
+	pray_for_debug_info_on_segfault();
 
 	const char *version = SDL_COORD_PLANE_ITERATION_VERSION;
 	coordinate_plane_s *plane =

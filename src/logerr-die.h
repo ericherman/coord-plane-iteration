@@ -7,9 +7,10 @@
 
 #include <stdio.h>		/* FILE, fprintf */
 
-extern FILE *_global_err_stream;
+FILE *logger_set_global_err_stream(FILE *stream);
+FILE *logger_get_global_err_stream(void);
 
-void backtrace_exit_handler(int sig);
+void pray_for_debug_info_on_segfault(void);
 
 void lffl_printf(FILE *log, const char *file, const char *func, int line,
 		 const char *format, ...);
@@ -18,7 +19,7 @@ void lffl_die(FILE *log, const char *file, const char *func, int line,
 	      const char *format, ...);
 
 #ifndef _err_stream
-#define _err_stream (_global_err_stream ? _global_err_stream : stderr)
+#define _err_stream logger_get_global_err_stream()
 #endif
 
 #ifndef errorf

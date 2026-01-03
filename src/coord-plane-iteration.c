@@ -286,16 +286,16 @@ coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
 	}
 	if (!plane->all_points) {
 		size_t size = needed * sizeof(iterxy_s);
-		plane->all_points = alloc_or_die("plane->all_points", size);
+		plane->all_points = malloc_or_die("plane->all_points", size);
 		plane->all_points_len = needed;
 
 		size = needed * sizeof(iterxy_s *);
-		plane->scratch = alloc_or_die("plane->scratch", size);
+		plane->scratch = malloc_or_die("plane->scratch", size);
 		plane->scratch_len = needed;
 
 		size = needed * sizeof(iterxy_s *);
 		plane->points_not_escaped =
-		    alloc_or_die("plane->points_not_escaped", size);
+		    malloc_or_die("plane->points_not_escaped", size);
 		plane->points_not_escaped_len = needed;
 	}
 
@@ -344,7 +344,7 @@ coordinate_plane_s *coordinate_plane_new(const char *program_name,
 	coordinate_plane_s *plane = NULL;
 	size_t size = sizeof(coordinate_plane_s);
 
-	plane = alloc_or_die("plane", size);
+	plane = malloc_or_die("plane", size);
 	memset(plane, 0x00, size);
 
 	plane->argv0 = program_name;
@@ -354,7 +354,7 @@ coordinate_plane_s *coordinate_plane_new(const char *program_name,
 	coordinate_plane_iterate_context_s *contexts;
 	plane->contexts_len = num_threads ? num_threads : 1;
 	size = sizeof(coordinate_plane_iterate_context_s) * plane->contexts_len;
-	contexts = alloc_or_die("contexts", size);
+	contexts = malloc_or_die("contexts", size);
 	plane->contexts = contexts;
 	plane->num_threads = num_threads;
 
@@ -370,9 +370,7 @@ void coordinate_plane_free(coordinate_plane_s *plane)
 		free(plane->contexts);
 #ifndef SKIP_THREADS
 		if (plane->tpool) {
-			int skip_join = 0;
-			basic_thread_pool_stop_and_free(&(plane->tpool),
-							skip_join);
+			basic_thread_pool_stop_and_free(&(plane->tpool));
 		}
 #endif
 		free(plane->all_points);
@@ -507,9 +505,7 @@ static void coordinate_plane_iterate_multi_threaded(coordinate_plane_s *plane,
 	basic_thread_pool_s *pool = plane->tpool;
 	if (pool == NULL || basic_thread_pool_size(pool) < num_threads) {
 		if (pool) {
-			int skip_join = 0;
-			basic_thread_pool_stop_and_free(&(plane->tpool),
-							skip_join);
+			basic_thread_pool_stop_and_free(&(plane->tpool));
 		}
 		plane->tpool = basic_thread_pool_new(plane->num_threads);
 		if (!plane->tpool) {
@@ -722,7 +718,7 @@ void coordinate_plane_threads_more(coordinate_plane_s *plane)
 		    sizeof(coordinate_plane_iterate_context_s) *
 		    plane->contexts_len;
 		coordinate_plane_iterate_context_s *contexts;
-		contexts = alloc_or_die("contexts", size);
+		contexts = malloc_or_die("contexts", size);
 		plane->contexts = contexts;
 	}
 }

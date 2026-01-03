@@ -13,9 +13,15 @@
 #include "logerr-die.h"
 #include "alloc-or-die.h"
 
+#ifndef Make_valgrind_happy
+#define Make_valgrind_happy 0
+#endif
+
 /* Thread command, check return code, and whine if not success */
 static int tc(const char *str_thrd_call, int thrd_err, size_t our_id)
 {
+	static_assert(thrd_success == 0);
+
 	switch (thrd_err) {
 	case thrd_success:
 		break;
@@ -56,7 +62,7 @@ struct basic_thread_pool {
 	mtx_t *mutex;
 	cnd_t *todo;
 	cnd_t *done;
-	atomic_bool stop;
+	bool stop;
 	thrd_t *threads;
 	basic_thread_pool_loop_context_s *thread_contexts;
 	size_t threads_len;
@@ -87,82 +93,51 @@ static int basic_thread_pool_loop(void *arg)
 			basic_thread_pool_todo_s *elem = pool->first;
 			pool->first = elem->next;
 			++(pool->num_working);
-			Tc(mtx_unlock(pool->mutex), id);
 
+			Tc(mtx_unlock(pool->mutex), id);
 			if (elem != NULL) {
 				void *arg = elem->arg;
 				thrd_start_t func = elem->func;
 				free(elem);
 				func(arg);
 			}
-
 			Tc(mtx_lock(pool->mutex), id);
+
 			--(pool->num_working);
 			Tc(cnd_broadcast(pool->done), id);
 		}
 		Tc(mtx_unlock(pool->mutex), id);
-		thrd_yield();
 	}
 	return 0;
 }
 
 basic_thread_pool_s *basic_thread_pool_new(size_t num_threads)
 {
+	basic_thread_pool_s *pool = NULL;
 	num_threads = num_threads ? num_threads : 1;
 
-	size_t size = sizeof(basic_thread_pool_s);
-	basic_thread_pool_s *pool = NULL;
-	pool = malloc_or_log("pool", sizeof(basic_thread_pool_s));
-	if (!pool) {
-		return NULL;
-	}
-	memset(pool, 0x00, sizeof(basic_thread_pool_s));
-
-	pool->first = NULL;
-	pool->last = NULL;
-	pool->num_working = 0;
-	pool->stop = false;
-
-	pool->mutex = malloc_or_log("pool->mutex", sizeof(mtx_t));
-	pool->todo = malloc_or_log("pool->todo", sizeof(cnd_t));
-	pool->done = malloc_or_log("pool->done", sizeof(cnd_t));
-
-	size = sizeof(thrd_t) * num_threads;
-	pool->threads = malloc_or_log("pool->threads", size);
-
-	size = sizeof(basic_thread_pool_loop_context_s) * num_threads;
-	pool->thread_contexts = malloc_or_log("pool->thread_contexts", size);
-
-	int err = !(pool->mutex && pool->todo && pool->done && pool->threads
-		    && pool->thread_contexts);
-	if (err) {
-		errorf("allocation failed,"
-		       " mutex: %p todo:%p done: %p"
-		       " threads %p thread_contexts: %p", pool->mutex,
-		       pool->todo, pool->done, pool->threads,
-		       pool->thread_contexts);
-		goto basic_thread_pool_new_end;
-	}
+	pool = calloc_or_die("pool", 1, sizeof(basic_thread_pool_s));
+	pool->mutex = calloc_or_die("pool->mutex", 1, sizeof(mtx_t));
+	pool->todo = calloc_or_die("pool->todo", 1, sizeof(cnd_t));
+	pool->done = calloc_or_die("pool->done", 1, sizeof(cnd_t));
+	pool->threads =
+	    calloc_or_die("pool->threads", num_threads, sizeof(thrd_t));
+	pool->thread_contexts =
+	    calloc_or_die("pool->thread_contexts", num_threads,
+			  sizeof(basic_thread_pool_loop_context_s));
 
 	size_t id = 0;
 
-	err = Tc(mtx_init(pool->mutex, mtx_plain), id);
-	if (err) {
-		errorf("could not mtx_init(%s, %d)\n", "pool->mutex",
-		       mtx_plain);
-		goto basic_thread_pool_new_end;
+	if (Tc(mtx_init(pool->mutex, mtx_plain), id)) {
+		die("could not mtx_init(%s, %d)\n", "pool->mutex", mtx_plain);
 	}
 
-	err = Tc(cnd_init(pool->todo), id);
-	if (err) {
-		errorf("could not cnd_init(%s)\n", "pool->todo");
-		goto basic_thread_pool_new_end;
+	if (Tc(cnd_init(pool->todo), id)) {
+		die("could not cnd_init(%s)\n", "pool->todo");
 	}
 
-	err = Tc(cnd_init(pool->done), id);
-	if (err) {
-		errorf("could not cnd_init(%s)\n", "pool->done");
-		goto basic_thread_pool_new_end;
+	if (Tc(cnd_init(pool->done), id)) {
+		die("could not cnd_init(%s)\n", "pool->done");
 	}
 
 	pool->threads_len = num_threads;
@@ -174,23 +149,16 @@ basic_thread_pool_s *basic_thread_pool_new(size_t num_threads)
 		thrd_t *thread = pool->threads + i;
 		thrd_start_t func = basic_thread_pool_loop;
 		void *arg = &(pool->thread_contexts[i]);
-		err = Tc(thrd_create(thread, func, arg), id);
-		if (err) {
-			errorf("could not (%s)\n", "thrd_create");
-			goto basic_thread_pool_new_end;
+		if (Tc(thrd_create(thread, func, arg), id)) {
+			die("could not thrd_create (id: %zu)", id);
 		}
-#ifndef DEBUG
+#if !Make_valgrind_happy
 		else {
 			Tc(thrd_detach(*thread), id);
 		}
 #endif
 	}
 
-basic_thread_pool_new_end:
-	if (err) {
-		basic_thread_pool_stop_and_free(&pool, 0);
-		return NULL;
-	}
 	return pool;
 }
 
@@ -202,15 +170,19 @@ int basic_thread_pool_add(basic_thread_pool_s *pool, thrd_start_t func,
 	assert(func);
 
 	basic_thread_pool_todo_s *elem;
-	elem = malloc_or_log("elem", sizeof(basic_thread_pool_todo_s));
-	if (!elem) {
-		return 1;
-	}
+	elem = calloc_or_die("elem", 1, sizeof(basic_thread_pool_todo_s));
 	elem->func = func;
 	elem->arg = arg;
-	elem->next = NULL;
 
-	int err1 = Tc(mtx_lock(pool->mutex), id);
+	if (Tc(mtx_lock(pool->mutex), id)) {
+		die("could not mtx_lock(pool->mutex) (%p) (id: %zu)",
+		    pool->mutex, id);
+	}
+
+	if (pool->stop) {
+		return 1;
+	}
+
 	if (pool->first == NULL) {
 		pool->first = elem;
 		pool->last = elem;
@@ -218,26 +190,32 @@ int basic_thread_pool_add(basic_thread_pool_s *pool, thrd_start_t func,
 		pool->last->next = elem;
 		pool->last = elem;
 	}
-	int err2 = Tc(cnd_broadcast(pool->todo), id);
-	int err3 = Tc(mtx_unlock(pool->mutex), id);
+	int err = Tc(cnd_broadcast(pool->todo), id);
+	if (Tc(mtx_unlock(pool->mutex), id)) {
+		die("could not mtx_unlock(pool->mutex) (%p) (id: %zu)",
+		    pool->mutex, id);
+	}
 
-	return (err1 || err2 || err3) ? 1 : 0;
+	return err;
 }
 
 int basic_thread_pool_wait(basic_thread_pool_s *pool)
 {
 	size_t id = 0;
 	assert(pool);
-	int err1 = Tc(mtx_lock(pool->mutex), id);
-	int err2 = 0;
+	if (Tc(mtx_lock(pool->mutex), id)) {
+		die("failed to mtx_lock(%p), %zu", pool->mutex, id);
+	}
+	int err = 0;
 	while ((pool->num_working > 0) || (pool->first != NULL)) {
-		int err_tmp = Tc(cnd_wait(pool->done, pool->mutex), id);
-		if (err_tmp) {
-			err2 = 1;
+		if (Tc(cnd_wait(pool->done, pool->mutex), id)) {
+			err = 1;
 		}
 	}
-	int err3 = Tc(mtx_unlock(pool->mutex), id);
-	return (err1 || err2 || err3) ? 1 : 0;
+	if (Tc(mtx_unlock(pool->mutex), id)) {
+		die("failed to mtx_unlock(%p), %zu", pool->mutex, id);
+	}
+	return err;
 }
 
 size_t basic_thread_pool_size(basic_thread_pool_s *pool)
@@ -246,8 +224,7 @@ size_t basic_thread_pool_size(basic_thread_pool_s *pool)
 	return pool->threads_len;
 }
 
-void basic_thread_pool_stop_and_free(basic_thread_pool_s **pool_ref,
-				     int skip_join)
+void basic_thread_pool_stop_and_free(basic_thread_pool_s **pool_ref)
 {
 	basic_thread_pool_s *pool = *pool_ref;
 	size_t id = 0;
@@ -255,9 +232,7 @@ void basic_thread_pool_stop_and_free(basic_thread_pool_s **pool_ref,
 		return;
 	}
 
-	if (pool->mutex) {
-		Tc(mtx_lock(pool->mutex), id);
-	}
+	Tc(mtx_lock(pool->mutex), id);
 
 	pool->stop = true;
 
@@ -267,73 +242,52 @@ void basic_thread_pool_stop_and_free(basic_thread_pool_s **pool_ref,
 		free(elem);
 	}
 
-	if (pool->todo) {
-		Tc(cnd_broadcast(pool->todo), id);
-	}
-	if (pool->mutex) {
-		Tc(mtx_unlock(pool->mutex), id);
-	}
+	Tc(cnd_broadcast(pool->todo), id);
 
-	if (pool->mutex) {
-		Tc(mtx_lock(pool->mutex), id);
-	}
 	while (pool->num_working > 0) {
-		if (pool->todo) {
-			Tc(cnd_broadcast(pool->todo), id);
-		}
-		if (pool->done && pool->mutex) {
-			Tc(cnd_wait(pool->done, pool->mutex), id);
-		}
-	}
-	if (pool->todo) {
 		Tc(cnd_broadcast(pool->todo), id);
-	}
-	if (pool->mutex) {
-		Tc(mtx_unlock(pool->mutex), id);
-	}
-	thrd_yield();
-
-	if (pool->todo) {
-		cnd_destroy(pool->todo);
-		free(pool->todo);
-		pool->todo = NULL;
+		Tc(cnd_wait(pool->done, pool->mutex), id);
 	}
 
-	if (pool->done) {
-		cnd_destroy(pool->done);
-		free(pool->done);
-		pool->done = NULL;
-	}
+	Tc(cnd_broadcast(pool->todo), id);
+	Tc(mtx_unlock(pool->mutex), id);
 
-	for (size_t i = 0; (!skip_join) && i < pool->threads_len; ++i) {
+	for (size_t i = 0; i < pool->threads_len; ++i) {
 		int result = 0;
 		thrd_t thread = pool->threads[i];
 		if (thread) {
+			/* Note: if Make_valgrind_happy, we're joining a
+			   thread which was not thrd_detach()-ed,
+			   this is undefined behavior, but works
+			   on amd64 linux with glibc */
 			Tc(thrd_join(thread, &result), id);
 		}
-#ifdef DEBUG
 		if (result) {
 			/* https://pubs.opengroup.org/onlinepubs/9699919799/functions/V2_chap02.html#tag_15_05_01 */
 			fflush(stdout);
 			fprintf(stderr, "\nthread[%zu] returned %d\n", i,
 				result);
 		}
-#endif
 	}
 
-	if (pool->threads) {
-		free(pool->threads);
-		pool->threads = NULL;
-	}
-	if (pool->thread_contexts) {
-		free(pool->thread_contexts);
-		pool->thread_contexts = NULL;
-	}
-	if (pool->mutex) {
-		mtx_destroy(pool->mutex);
-		free(pool->mutex);
-		pool->mutex = NULL;
-	}
+	free(pool->threads);
+	pool->threads = NULL;
+
+	free(pool->thread_contexts);
+	pool->thread_contexts = NULL;
+
+	cnd_destroy(pool->todo);
+	free(pool->todo);
+	pool->todo = NULL;
+
+	cnd_destroy(pool->done);
+	free(pool->done);
+	pool->done = NULL;
+
+	mtx_destroy(pool->mutex);
+	free(pool->mutex);
+	pool->mutex = NULL;
+
 	free(pool);
 	*pool_ref = NULL;
 }

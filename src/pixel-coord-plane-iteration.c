@@ -207,7 +207,7 @@ void *pixel_buffer_resize(pixel_buffer_s *buf, int height, int width)
 	buf->pitch = buf->width * buf->bytes_per_pixel;
 	size_t size = buf->pixels_len * buf->bytes_per_pixel;
 
-	buf->pixels = alloc_or_die("buf->pixels", size);
+	buf->pixels = malloc_or_die("buf->pixels", size);
 
 	return buf->pixels;
 }

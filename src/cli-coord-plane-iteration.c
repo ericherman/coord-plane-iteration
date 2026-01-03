@@ -5,8 +5,6 @@
 
 #define CLI_COORD_PLANE_ITERATION_VERSION "0.1.0"
 
-#include <signal.h>
-
 #include "logerr-die.h"
 #include "coord-plane-option-parser.h"
 
@@ -87,7 +85,7 @@ void fprint_coordinate_plane_ascii(FILE *out, coordinate_plane_s *plane)
 
 int main(int argc, char **argv)
 {
-	signal(SIGSEGV, backtrace_exit_handler);
+	pray_for_debug_info_on_segfault();
 
 	const char *version = CLI_COORD_PLANE_ITERATION_VERSION;
 	coordinate_plane_s *plane =

@@ -14,7 +14,7 @@ LDLIBS += -lpthread
 endif
 
 BUILD_CFLAGS += -DNDEBUG -O2
-DEBUG_CFLAGS += -DDEBUG -O0 -DMake_valgrind_happy=1
+DEBUG_CFLAGS += -O0 -DMake_valgrind_happy=1
 
 ifeq ($(findstring /usr/include/SDL2/SDL.h,$(wildcard /usr/include/SDL2/*.h)),)
 $(info SDL2/SDL.h not found, "best" is ascii-art interface)
