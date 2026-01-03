@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
 /* pixel-coord-plane-iteration.h: playing with mandlebrot and such */
-/* Copyright (C) 2020-2023 Eric Herman <eric@freesa.org> */
+/* Copyright (C) 2020-2026 Eric Herman <eric@freesa.org> */
 /* https://github.com/ericherman/coord-plane-iteration */
 
 #include <stdio.h>
@@ -22,7 +22,8 @@ static void long_tail_gradiant(rgb24_s *result, uint32_t distance)
 
 #if DEBUG
 	if (distance <= 10 || (distance % 100 == 0)) {
-		fprintf(stdout, "\ni: %" PRIu32 ": hue: %g\n", distance, hue);
+		fflush(stdout);
+		fprintf(stderr, "\ni: %" PRIu32 ": hue: %g\n", distance, hue);
 	}
 #endif
 
@@ -242,7 +243,7 @@ pixel_buffer_s *pixel_buffer_new(uint32_t window_x, uint32_t window_y,
 {
 	pixel_buffer_s *buf = NULL;
 	size_t size = sizeof(pixel_buffer_s);
-	buf = alloc_or_die("buf", size);
+	buf = calloc_or_die("buf", 1, size);
 
 	buf->bytes_per_pixel = sizeof(uint32_t);
 	pixel_buffer_resize(buf, window_y, window_x);
