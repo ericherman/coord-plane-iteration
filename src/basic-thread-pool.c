@@ -183,6 +183,7 @@ int basic_thread_pool_add(basic_thread_pool_s *pool, thrd_start_t func,
 	}
 
 	if (pool->stop) {
+		Tc(mtx_unlock(pool->mutex), id);
 		return 1;
 	}
 
