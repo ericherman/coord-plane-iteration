@@ -228,6 +228,23 @@ size_t basic_thread_pool_size(basic_thread_pool_s *pool)
 	return pool->threads_len;
 }
 
+size_t basic_thread_pool_queue_size(basic_thread_pool_s *pool)
+{
+	size_t queue_size = 0;
+	if (Tc(mtx_lock(pool->mutex), 0)) {
+		die("failed to mtx_lock(%p), 0", pool->mutex);
+	}
+	basic_thread_pool_todo_s *elem = pool->first;
+	while (elem) {
+		++queue_size;
+		elem = elem->next;
+	}
+	if (Tc(mtx_unlock(pool->mutex), 0)) {
+		die("failed to mtx_unlock(%p), 0", pool->mutex);
+	}
+	return queue_size;
+}
+
 void basic_thread_pool_stop_and_free(basic_thread_pool_s **pool_ref)
 {
 	basic_thread_pool_s *pool = *pool_ref;

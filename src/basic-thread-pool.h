@@ -19,6 +19,8 @@ int basic_thread_pool_wait(basic_thread_pool_s *pool);
 
 size_t basic_thread_pool_size(basic_thread_pool_s *pool);
 
+size_t basic_thread_pool_queue_size(basic_thread_pool_s *pool);
+
 /* discards any unfinished work */
 void basic_thread_pool_stop_and_free(basic_thread_pool_s **pool_ref);
 
