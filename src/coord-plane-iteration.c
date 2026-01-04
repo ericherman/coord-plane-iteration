@@ -64,7 +64,7 @@ static bool xy_radius_greater_than_2(ldxy_s xy)
 }
 
 /* Z[n+1] = (Z[n])^2 + Orig */
-static void mandlebrot(iterxy_s *p)
+void mandlebrot(iterxy_s *p)
 {
 	/* first, square the complex */
 	ldxy_s result;
@@ -75,7 +75,7 @@ static void mandlebrot(iterxy_s *p)
 	p->z.y = result.y + p->c.y;
 }
 
-static void julia(iterxy_s *p)
+void julia(iterxy_s *p)
 {
 	/* first, square the complex */
 	ldxy_s result;
@@ -87,14 +87,14 @@ static void julia(iterxy_s *p)
 }
 
 #ifdef INCLUDE_ALL_FUNCTIONS
-static void ordinary_square(iterxy_s *p)
+void ordinary_square(iterxy_s *p)
 {
 	p->z.y = p->z.y * p->z.y;
 	p->z.x = p->z.x * p->z.x;
 }
 
 /* Z[n+1] = collapse_to_y2_to_y((Z[n])^2) + Orig */
-static void square_binomial_collapse_y2_add_orig(iterxy_s *p)
+void square_binomial_collapse_y2_add_orig(iterxy_s *p)
 {
 	/* z[n+1] = z[n]^2 + B */
 
@@ -113,7 +113,7 @@ static void square_binomial_collapse_y2_add_orig(iterxy_s *p)
 }
 
 /* Z[n+1] = ignore_y2((Z[n])^2) + Orig */
-static void square_binomial_ignore_y2_add_orig(iterxy_s *p)
+void square_binomial_ignore_y2_add_orig(iterxy_s *p)
 {
 	/* z[n+1] = z[n]^2 + B */
 
@@ -130,7 +130,7 @@ static void square_binomial_ignore_y2_add_orig(iterxy_s *p)
 	p->z.y = xy + yx + p->c.y;
 }
 
-static void not_a_circle(iterxy_s *p)
+void not_a_circle(iterxy_s *p)
 {
 	long double xx = p->z.x * p->z.x;
 	long double yy = p->z.y * p->z.y;
@@ -435,8 +435,8 @@ static void coordinate_plane_update_from_iterate_context(coordinate_plane_s
 	ctx->not_escaped_len = 0;
 }
 
-static int coordinate_plane_iterate_context(coordinate_plane_iterate_context_s
-					    *ctx)
+int
+coordinate_plane_iterate_with_context(coordinate_plane_iterate_context_s *ctx)
 {
 	coordinate_plane_s *plane = ctx->plane;
 
@@ -477,7 +477,7 @@ static void coordinate_plane_iterate_single_threaded(coordinate_plane_s *plane,
 	coordinate_plane_iterate_context_init(plane, steps, offset, 1);
 
 	coordinate_plane_iterate_context_s *context = plane->contexts + offset;
-	coordinate_plane_iterate_context(context);
+	coordinate_plane_iterate_with_context(context);
 
 	plane->not_escaped = 0;
 	coordinate_plane_update_from_iterate_context(plane, context);
@@ -490,7 +490,7 @@ static int coordinate_plane_iterate_inner(void *void_context)
 	coordinate_plane_iterate_context_s *context = NULL;
 	context = (coordinate_plane_iterate_context_s *)void_context;
 
-	return coordinate_plane_iterate_context(context);
+	return coordinate_plane_iterate_with_context(context);
 }
 
 static void coordinate_plane_iterate_multi_threaded(coordinate_plane_s *plane,
