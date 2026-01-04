@@ -3,10 +3,16 @@
 /* Copyright (C) 2020-2026 Eric Herman <eric@freesa.org> */
 /* https://github.com/ericherman/coord-plane-iteration */
 
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <inttypes.h>
+
+#ifndef SKIP_THREADS
+#include <stdatomic.h>
+#include "basic-thread-pool.h"
+#endif
 
 #include "alloc-or-die.h"
 #include "coord-plane-option-parser.h"
@@ -172,41 +178,148 @@ void print_directions(coordinate_plane_s *plane, FILE *out)
 	fprintf(out, "escape or 'q' to quit\n");
 }
 
+struct pixel_buffer_update_line_context {
+	size_t id;
+	coordinate_plane_s *plane;
+	pixel_buffer_s *buf;
+	uint32_t plane_win_width;
+	uint32_t first_y;
+	size_t lines;
+#ifndef SKIP_THREADS
+	atomic_bool done;
+#else
+	int done;
+#endif
+};
+
+void pixel_buffer_update_line(coordinate_plane_s *plane, pixel_buffer_s *buf,
+			      uint32_t plane_win_width, uint32_t y)
+{
+	for (uint32_t x = 0; x < plane_win_width; x++) {
+		size_t escaped = coordinate_plane_escaped(plane, x, y);
+		size_t palette_idx = escaped % buf->palette_len;
+		rgb24_s color = buf->palette[palette_idx];
+		uint32_t foreground = rgb24_to_uint32(color);
+		*(buf->pixels + (y * buf->width) + x) = foreground;
+	}
+}
+
+int pixel_buffer_update_line_ctx(void *context)
+{
+	struct pixel_buffer_update_line_context *ctx = context;
+
+	coordinate_plane_s *plane = ctx->plane;
+	pixel_buffer_s *buf = ctx->buf;
+	uint32_t plane_win_width = ctx->plane_win_width;
+	size_t lines = ctx->lines;
+	uint32_t first_y = ctx->first_y;
+
+	for (size_t i = 0; i < lines; ++i) {
+		uint32_t y = first_y + i;
+		pixel_buffer_update_line(plane, buf, plane_win_width, y);
+	}
+
+	ctx->done = true;
+
+	return 0;
+}
+
+static size_t minz(size_t a, size_t b)
+{
+	return a < b ? a : b;
+}
+
 void pixel_buffer_update(coordinate_plane_s *plane, pixel_buffer_s *buf)
 {
 	uint32_t plane_win_width = coordinate_plane_win_width(plane);
+	assert(plane_win_width > 0);
 	if (plane_win_width != buf->width) {
 		die("plane->win_width:%" PRIu32 " != buf->width: %" PRIu32,
 		    plane_win_width, buf->width);
 	}
+
 	uint32_t plane_win_height = coordinate_plane_win_height(plane);
+	assert(plane_win_height > 0);
 	if (plane_win_height != buf->height) {
 		die("plane->win_height:%" PRIu32 " != buf->height: %" PRIu32,
 		    plane_win_height, buf->height);
 	}
 
-	for (uint32_t y = 0; y < plane_win_height; y++) {
-		for (uint32_t x = 0; x < plane_win_width; x++) {
-			size_t escaped = coordinate_plane_escaped(plane, x, y);
-			size_t palette_idx = escaped % buf->palette_len;
-			rgb24_s color = buf->palette[palette_idx];
-			uint32_t foreground = rgb24_to_uint32(color);
-			*(buf->pixels + (y * buf->width) + x) = foreground;
+	size_t line_ctx_size = sizeof(struct pixel_buffer_update_line_context);
+	size_t thread_pool_size = 0;
+	if (plane->tpool) {
+		thread_pool_size = basic_thread_pool_size(plane->tpool);
+	}
+	if (thread_pool_size < 2) {
+		for (uint32_t y = 0; y < plane_win_height; y++) {
+			pixel_buffer_update_line(plane, buf, plane_win_width,
+						 y);
+		}
+	} else {
+		assert(basic_thread_pool_size(plane->tpool));
+		assert(basic_thread_pool_queue_size(plane->tpool) == 0);
+
+		if (!buf->contexts) {
+			buf->contexts = calloc_or_die("buf->contexts",
+						      thread_pool_size,
+						      line_ctx_size);
+			buf->contexts_len = thread_pool_size;
+		}
+
+		assert(buf->contexts_len);
+
+		struct pixel_buffer_update_line_context *ctx;
+		size_t num_contexts = minz(buf->contexts_len, plane_win_height);
+		size_t lines = plane_win_height / num_contexts;
+		size_t leftover = plane_win_height % num_contexts;
+		for (size_t i = 0; i < num_contexts; ++i) {
+
+			ctx = buf->contexts + i;
+			ctx->id = i;
+			ctx->plane = plane;
+			ctx->buf = buf;
+			ctx->plane_win_width = plane_win_width;
+			ctx->first_y = i * lines;
+			ctx->lines = lines;
+			if (i == num_contexts - 1) {
+				ctx->lines = lines + leftover;
+			} else {
+				ctx->lines = lines;
+			}
+			ctx->done = 0;
+
+			void *arg = ctx;
+			thrd_start_t func = pixel_buffer_update_line_ctx;
+			if (basic_thread_pool_add(plane->tpool, func, arg)) {
+				ctx->done = 1;
+			}
+		}
+		for (size_t i = 0; i < num_contexts; ++i) {
+			ctx = buf->contexts + i;
+			while (!ctx->done) {
+				thrd_yield();
+
+			}
 		}
 	}
 }
 
-void *pixel_buffer_resize(pixel_buffer_s *buf, int height, int width)
+void *pixel_buffer_resize(pixel_buffer_s *buf, uint32_t height, uint32_t width)
 {
+	assert(!height || ((unsigned long)width) <= SIZE_MAX / height);
+	assert((width * (unsigned long)height) <=
+	       (SIZE_MAX / sizeof(uint32_t)));
+
 	if (buf->pixels) {
 		free(buf->pixels);
 	}
 	buf->width = width;
 	buf->height = height;
+
 	buf->pixels_len = buf->height * buf->width;
 	buf->pitch = buf->width * buf->bytes_per_pixel;
-	size_t size = buf->pixels_len * buf->bytes_per_pixel;
 
+	size_t size = buf->pixels_len * buf->bytes_per_pixel;
 	buf->pixels = malloc_or_die("buf->pixels", size);
 
 	return buf->pixels;
@@ -280,5 +393,6 @@ void pixel_buffer_free(pixel_buffer_s *buf)
 	}
 	free(buf->palette);
 	free(buf->pixels);
+	free(buf->contexts);
 	free(buf);
 }

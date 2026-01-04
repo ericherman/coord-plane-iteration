@@ -168,44 +168,6 @@ struct coordinate_plane_iterate_context;
 typedef struct coordinate_plane_iterate_context
     coordinate_plane_iterate_context_s;
 
-struct coordinate_plane {
-	const char *argv0;
-
-	uint32_t win_width;
-	uint32_t win_height;
-
-	ldxy_s center;
-	long double resolution_x;
-	long double resolution_y;
-
-	uint64_t iteration_count;
-	size_t escaped;
-	size_t not_escaped;
-	uint64_t halt_after;
-	uint32_t skip_rounds;
-
-#ifndef SKIP_THREADS
-	basic_thread_pool_s *tpool;
-#else
-	void *tpool;
-#endif
-	uint32_t num_threads;
-	coordinate_plane_iterate_context_s *contexts;
-	size_t contexts_len;
-
-	size_t pfuncs_idx;
-	ldxy_s seed;
-
-	iterxy_s *all_points;
-	size_t all_points_len;
-
-	iterxy_s **scratch;
-	size_t scratch_len;
-
-	iterxy_s **points_not_escaped;
-	size_t points_not_escaped_len;
-};
-
 struct coordinate_plane_iterate_context {
 	coordinate_plane_s *plane;
 	size_t steps;

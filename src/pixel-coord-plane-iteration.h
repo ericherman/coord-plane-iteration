@@ -62,6 +62,8 @@ typedef struct pixel_buffer {
 	uint32_t *pixels;
 	rgb24_s *palette;
 	size_t palette_len;
+	struct pixel_buffer_update_line_context *contexts;
+	size_t contexts_len;
 } pixel_buffer_s;
 
 void human_input_init(human_input_s *input);
@@ -73,7 +75,7 @@ void print_directions(coordinate_plane_s *plane, FILE *out);
 
 void pixel_buffer_update(coordinate_plane_s *plane, pixel_buffer_s *buf);
 
-void *pixel_buffer_resize(pixel_buffer_s *buf, int height, int width);
+void *pixel_buffer_resize(pixel_buffer_s *buf, uint32_t height, uint32_t width);
 
 pixel_buffer_s *pixel_buffer_new(uint32_t window_x, uint32_t window_y,
 				 size_t palette_len, size_t skip_rounds);

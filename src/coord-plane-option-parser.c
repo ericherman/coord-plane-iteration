@@ -150,9 +150,11 @@ static void coord_options_rationalize(coord_options_s *options)
 	}
 	if (options->threads < 1) {
 #ifndef SKIP_THREADS
-		options->threads = (uint32_t)sysconf(_SC_NPROCESSORS_ONLN);
-		if (options->threads > 1) {
-			--(options->threads);
+		long procs = sysconf(_SC_NPROCESSORS_ONLN);
+		if (procs > 1) {
+			options->threads = (uint32_t)procs;
+		} else {
+			options->threads = 1;
 		}
 #else
 		options->threads = 1;
