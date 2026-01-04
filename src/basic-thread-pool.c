@@ -170,7 +170,10 @@ int basic_thread_pool_add(basic_thread_pool_s *pool, thrd_start_t func,
 	assert(func);
 
 	basic_thread_pool_todo_s *elem;
-	elem = calloc_or_die("elem", 1, sizeof(basic_thread_pool_todo_s));
+	elem = calloc_or_log("elem", 1, sizeof(basic_thread_pool_todo_s));
+	if (!elem) {
+		return 1;
+	}
 	elem->func = func;
 	elem->arg = arg;
 
