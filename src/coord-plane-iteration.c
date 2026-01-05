@@ -40,6 +40,7 @@ static void iterxy_init_zero(iterxy_s *p, ldxy_s xy, ldxy_s seed)
 	p->z.x = 0.0;
 	p->z.y = 0.0;
 	p->escaped = 0;
+	p->trapped = 0;
 }
 
 static void iterxy_init_xy(iterxy_s *p, ldxy_s xy, ldxy_s seed)
@@ -50,6 +51,7 @@ static void iterxy_init_xy(iterxy_s *p, ldxy_s xy, ldxy_s seed)
 	p->z.x = xy.x;
 	p->z.y = xy.y;
 	p->escaped = 0;
+	p->trapped = 0;
 }
 
 static long double radius_squared(ldxy_s c)
@@ -61,6 +63,46 @@ static bool xy_radius_greater_than_2(ldxy_s xy)
 {
 	long double escape_radius_squared = (2.0 * 2.0);
 	return (radius_squared(xy) > escape_radius_squared) ? true : false;
+}
+
+static inline int mandelbrot_in_main_cardioid(ldxy_s c)
+{
+	long double x = c.x;
+	long double y = c.y;
+
+	long double xm = x - 0.25L;
+	long double y2 = y * y;
+	long double q = xm * xm + y2;
+
+	return q * (q + xm) < 0.25L * y2;
+}
+
+static inline int mandelbrot_in_period2_bulb(ldxy_s c)
+{
+	long double x = c.x + 1.0L;
+	long double y = c.y;
+
+	return (x * x + y * y) < 0.0625L;
+}
+
+bool mandelbrot_trapped(ldxy_s xy)
+{
+	if (mandelbrot_in_main_cardioid(xy)) {
+		return true;
+	}
+	if (mandelbrot_in_period2_bulb(xy)) {
+		return true;
+	}
+	return false;
+}
+
+static void iterxy_init_zero_mandlebrot_trapped(iterxy_s *p, ldxy_s xy,
+						ldxy_s seed)
+{
+	iterxy_init_zero(p, xy, seed);
+	if (mandelbrot_trapped(p->c)) {
+		p->trapped = 1;
+	}
 }
 
 /* Z[n+1] = (Z[n])^2 + Orig */
@@ -141,8 +183,8 @@ void not_a_circle(iterxy_s *p)
 #endif /* INCLUDE_ALL_FUNCTIONS */
 
 named_pfunc_s pfuncs[] = {
-	{ iterxy_init_zero, xy_radius_greater_than_2, mandlebrot,
-	 "mandlebrot" },
+	{ iterxy_init_zero_mandlebrot_trapped, xy_radius_greater_than_2,
+	 mandlebrot, "mandlebrot" },
 	{ iterxy_init_xy, xy_radius_greater_than_2, julia, "julia" },
 #ifdef INCLUDE_ALL_FUNCTIONS
 	{ iterxy_init_xy, xy_radius_greater_than_2, ordinary_square,
@@ -227,7 +269,8 @@ coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
 	}
 	plane->iteration_count = 0;
 	plane->escaped = 0;
-	plane->not_escaped = (plane->win_width * plane->win_height);
+	plane->trapped = 0;
+	plane->not_escaped = 0;
 	plane->pfuncs_idx = pfuncs_idx;
 	/* cache the seed on the plane for reset */
 	plane->seed = seed;
@@ -269,7 +312,6 @@ coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
 			size_t i = (py * plane->win_width) + px;
 
 			iterxy_s *p = plane->all_points + i;
-			plane->points_not_escaped[i] = p;
 
 			/* location on the co-ordinate plane */
 			ldxy_s xy;
@@ -286,8 +328,16 @@ coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
 			}
 
 			pfunc_init(p, xy, seed);
+			if (p->trapped) {
+				++plane->trapped;
+			} else {
+				plane->points_not_escaped[plane->not_escaped] =
+				    p;
+				++(plane->not_escaped);
+			}
 		}
 	}
+	plane->unchanged = 0;
 	return plane;
 }
 
@@ -500,6 +550,7 @@ static void coordinate_plane_iterate_multi_threaded(coordinate_plane_s *plane,
 size_t coordinate_plane_iterate(coordinate_plane_s *plane, uint32_t steps)
 {
 	size_t old_escaped = plane->escaped;
+	size_t previous_not_escaped = plane->not_escaped;
 	size_t halt_after = coordinate_plane_halt_after(plane);
 
 	if (halt_after) {
@@ -513,7 +564,7 @@ size_t coordinate_plane_iterate(coordinate_plane_s *plane, uint32_t steps)
 		}
 	}
 
-	if (steps) {
+	if (steps && plane->not_escaped) {
 #ifndef SKIP_THREADS
 		coordinate_plane_iterate_multi_threaded(plane, steps);
 #else
@@ -521,6 +572,12 @@ size_t coordinate_plane_iterate(coordinate_plane_s *plane, uint32_t steps)
 #endif /* #ifndef SKIP_THREADS */
 
 		plane->iteration_count += steps;
+
+		if (previous_not_escaped != plane->not_escaped) {
+			plane->unchanged = 0;
+		} else {
+			plane->unchanged += steps;
+		}
 	}
 
 	assert(plane->escaped >= old_escaped);
@@ -759,7 +816,17 @@ size_t coordinate_plane_escaped_count(coordinate_plane_s *plane)
 
 size_t coordinate_plane_not_escaped_count(coordinate_plane_s *plane)
 {
-	return plane->not_escaped;
+	return plane->not_escaped + plane->trapped;
+}
+
+size_t coordinate_plane_trapped_count(coordinate_plane_s *plane)
+{
+	return plane->trapped;
+}
+
+size_t coordinate_plane_unchanged(coordinate_plane_s *plane)
+{
+	return plane->unchanged;
 }
 
 size_t coordinate_plane_num_threads(coordinate_plane_s *plane)

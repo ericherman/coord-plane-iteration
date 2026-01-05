@@ -33,6 +33,7 @@ typedef struct iterxy {
 	ldxy_s z;
 
 	uint32_t escaped;
+	uint32_t trapped;
 } iterxy_s;
 
 typedef void (*pfunc_init_f)(iterxy_s *p, ldxy_s xy, ldxy_s seed);
@@ -67,6 +68,7 @@ struct coordinate_plane {
 
 	uint64_t iteration_count;
 	size_t escaped;
+	size_t trapped;
 	size_t not_escaped;
 	uint64_t halt_after;
 	uint32_t skip_rounds;
@@ -91,6 +93,8 @@ struct coordinate_plane {
 
 	iterxy_s **points_not_escaped;
 	size_t points_not_escaped_len;
+
+	size_t unchanged;
 };
 typedef struct coordinate_plane coordinate_plane_s;
 
@@ -163,6 +167,8 @@ uint64_t coordinate_plane_halt_after(coordinate_plane_s *plane);
 uint32_t coordinate_plane_skip_rounds(coordinate_plane_s *plane);
 size_t coordinate_plane_escaped_count(coordinate_plane_s *plane);
 size_t coordinate_plane_not_escaped_count(coordinate_plane_s *plane);
+size_t coordinate_plane_trapped_count(coordinate_plane_s *plane);
+size_t coordinate_plane_unchanged(coordinate_plane_s *plane);
 size_t coordinate_plane_num_threads(coordinate_plane_s *plane);
 
 #endif /* COORD_PLANE_ITERATION_H */

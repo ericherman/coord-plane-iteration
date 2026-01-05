@@ -464,15 +464,19 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane,
 				    coordinate_plane_escaped_count(plane);
 				size_t not_escaped =
 				    coordinate_plane_not_escaped_count(plane);
+				size_t unchanged =
+				    coordinate_plane_unchanged(plane);
+				coordinate_plane_num_threads(plane);
 				size_t num_threads =
 				    coordinate_plane_num_threads(plane);
 				fprintf(stdout,
 					"i:%" PRIu64 " escaped: %" PRIu64
 					" not: %" PRIu64
-					" (ips: %.f fps: %.f ipf: %" PRIu32
+					" (u: %zu"
+					" ips: %.f fps: %.f ipf: %" PRIu32
 					" thds: %zu)     \r", it_count, escaped,
-					not_escaped, ips, fps, it_per_frame,
-					num_threads);
+					not_escaped, unchanged, ips, fps,
+					it_per_frame, num_threads);
 				fflush(stdout);
 			}
 		}
