@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
-/* cli-coord-plane-iteration.c: playing with mandlebrot and such */
+/* cli-coord-plane-iteration.c: playing with mandelbrot and such */
 /* Copyright (C) 2020-2026 Eric Herman <eric@freesa.org> */
 /* https://github.com/ericherman/coord-plane-iteration */
 

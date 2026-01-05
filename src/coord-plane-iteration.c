@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
-/* coord-plane-iteration.c: playing with mandlebrot and such */
+/* coord-plane-iteration.c: playing with mandelbrot and such */
 /* Copyright (C) 2020-2026 Eric Herman <eric@freesa.org> */
 
 #include <assert.h>
@@ -96,7 +96,7 @@ bool mandelbrot_trapped(ldxy_s xy)
 	return false;
 }
 
-static void iterxy_init_zero_mandlebrot_trapped(iterxy_s *p, ldxy_s xy,
+static void iterxy_init_zero_mandelbrot_trapped(iterxy_s *p, ldxy_s xy,
 						ldxy_s seed)
 {
 	iterxy_init_zero(p, xy, seed);
@@ -106,7 +106,7 @@ static void iterxy_init_zero_mandlebrot_trapped(iterxy_s *p, ldxy_s xy,
 }
 
 /* Z[n+1] = (Z[n])^2 + Orig */
-void mandlebrot(iterxy_s *p)
+void mandelbrot(iterxy_s *p)
 {
 	/* first, square the complex */
 	ldxy_s result;
@@ -183,8 +183,8 @@ void not_a_circle(iterxy_s *p)
 #endif /* INCLUDE_ALL_FUNCTIONS */
 
 named_pfunc_s pfuncs[] = {
-	{ iterxy_init_zero_mandlebrot_trapped, xy_radius_greater_than_2,
-	 mandlebrot, "mandlebrot" },
+	{ iterxy_init_zero_mandelbrot_trapped, xy_radius_greater_than_2,
+	 mandelbrot, "mandelbrot" },
 	{ iterxy_init_xy, xy_radius_greater_than_2, julia, "julia" },
 #ifdef INCLUDE_ALL_FUNCTIONS
 	{ iterxy_init_xy, xy_radius_greater_than_2, ordinary_square,

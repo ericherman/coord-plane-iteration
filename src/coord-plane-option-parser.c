@@ -134,7 +134,7 @@ static void coord_options_rationalize(coord_options_s *options)
 	}
 	if (options->function < 0
 	    || (((size_t)options->function) >= pfuncs_len)) {
-		options->function = pfuncs_mandlebrot_idx;
+		options->function = pfuncs_mandelbrot_idx;
 	}
 	if (!isfinite(options->seed_x)) {
 		options->seed_x = -1.25643;
@@ -272,7 +272,7 @@ void print_help(FILE *out, const char *argv0, const char *version)
 	fprintf(out, "\t-t --to=f          Right of the x-axis\n");
 	fprintf(out, "\t                           default is '1.5'\n");
 	fprintf(out, "\t-j --function=n    Function number\n");
-	fprintf(out, "\t                           0 for Mandlebrot\n");
+	fprintf(out, "\t                           0 for Mandelbrot\n");
 	fprintf(out, "\t                           1 for Julia\n");
 	fprintf(out, "\t-r --seed_x=f      Real (x) part of the Julia seed\n");
 	fprintf(out, "\t-i --seed_y=f      Imaginary (y) part of the seed\n");

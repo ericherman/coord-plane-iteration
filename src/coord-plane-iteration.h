@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
-/* coord-plane-iteration.h: playing with mandlebrot and such */
+/* coord-plane-iteration.h: playing with mandelbrot and such */
 /* Copyright (C) 2020-2026 Eric Herman <eric@freesa.org> */
 /* https://github.com/ericherman/coord-plane-iteration */
 
@@ -47,8 +47,8 @@ typedef struct named_pfunc {
 	const char *name;
 } named_pfunc_s;
 
-#define pfuncs_mandlebrot_idx	0U
-#define pfuncs_julia_idx	(pfuncs_mandlebrot_idx + 1U)
+#define pfuncs_mandelbrot_idx	0U
+#define pfuncs_julia_idx	(pfuncs_mandelbrot_idx + 1U)
 extern named_pfunc_s pfuncs[];
 extern const size_t pfuncs_len;
 
