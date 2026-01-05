@@ -363,6 +363,7 @@ void sdl_coord_plane_iteration(struct coordinate_plane *plane,
 	struct human_input *new_input = &input[1];
 	struct human_input *old_input = &input[0];
 
+	int print_selector = 0;
 	int shutdown = 0;
 	while (!shutdown) {
 		tmp_input = new_input;
@@ -470,14 +471,34 @@ void sdl_coord_plane_iteration(struct coordinate_plane *plane,
 				coordinate_plane_num_threads(plane);
 				size_t num_threads =
 				    coordinate_plane_num_threads(plane);
-				fprintf(stdout,
-					"i:%" PRIu64 " escaped: %" PRIu64
-					" not: %" PRIu64
-					" (u: %zu"
-					" ips: %.f fps: %.f ipf: %" PRIu32
-					" thds: %zu)     \r", it_count, escaped,
-					not_escaped, unchanged, ips, fps,
-					it_per_frame, num_threads);
+				int printed = 0;
+				if (print_selector++ > 8) {
+					print_selector = 0;
+				}
+				if (shutdown || print_selector < 5) {
+					printed =
+					    fprintf(stdout,
+						    "i:%" PRIu64 " escaped: %"
+						    PRIu64 " not: %" PRIu64
+						    " (unchanged for: %zu)",
+						    it_count, escaped,
+						    not_escaped, unchanged);
+				} else {
+					printed = fprintf(stdout,
+							  "i:%" PRIu64
+							  "    (per second: %.f"
+							  " fps: %.f per frame: %"
+							  PRIu32
+							  " threads: %zu)",
+							  it_count, ips, fps,
+							  it_per_frame,
+							  num_threads);
+				}
+				if (printed > 0) {
+					while (printed++ < 80)
+						fprintf(stdout, " ");
+				}
+				fprintf(stdout, "\r");
 				fflush(stdout);
 			}
 		}
