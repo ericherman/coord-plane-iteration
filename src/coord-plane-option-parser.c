@@ -13,14 +13,14 @@
 #include <unistd.h>
 #endif
 
-void print_command_line(coordinate_plane_s *plane, FILE *out)
+void print_command_line(struct coordinate_plane *plane, FILE *out)
 {
 	const char *argv0 = coordinate_plane_program(plane);
 	size_t pfuncs_idx = coordinate_plane_function_index(plane);
 
 	fprintf(out, "%s --function=%zu", argv0, pfuncs_idx);
 	if (pfuncs_idx == pfuncs_julia_idx) {
-		ldxy_s seed;
+		struct ldxy seed;
 		coordinate_plane_seed(plane, &seed);
 		fprintf(out, " --seed_x=%.*Lg --seed_y=%.*Lg", DECIMAL_DIG,
 			seed.x, DECIMAL_DIG, seed.y);
@@ -29,7 +29,7 @@ void print_command_line(coordinate_plane_s *plane, FILE *out)
 	if (skip_rounds) {
 		fprintf(out, " --skip_rounds=%" PRIu32, skip_rounds);
 	}
-	ldxy_s center;
+	struct ldxy center;
 	coordinate_plane_center(plane, &center);
 	fprintf(out, " --center_x=%.*Lg --center_y=%.*Lg", DECIMAL_DIG,
 		center.x, DECIMAL_DIG, center.y);
@@ -49,7 +49,7 @@ void print_command_line(coordinate_plane_s *plane, FILE *out)
 		DECIMAL_DIG, y_min, DECIMAL_DIG, y_max);
 }
 
-typedef struct coord_options {
+struct coord_options {
 	int win_width;
 	int win_height;
 	long double x_min;
@@ -66,9 +66,9 @@ typedef struct coord_options {
 	int skip_rounds;
 	int version;
 	int help;
-} coord_options_s;
+};
 
-static void coord_options_init(coord_options_s *options)
+static void coord_options_init(struct coord_options *options)
 {
 	options->win_width = -1;
 	options->win_height = -1;
@@ -88,7 +88,7 @@ static void coord_options_init(coord_options_s *options)
 	options->help = 0;
 }
 
-static void coord_options_rationalize(coord_options_s *options)
+static void coord_options_rationalize(struct coord_options *options)
 {
 	if (options->help != 1) {
 		options->help = 0;
@@ -162,7 +162,7 @@ static void coord_options_rationalize(coord_options_s *options)
 	}
 }
 
-static int coord_options_parse_argv(coord_options_s *options,
+static int coord_options_parse_argv(struct coord_options *options,
 				    int argc, char **argv, FILE *err)
 {
 	int opt_char;
@@ -287,10 +287,10 @@ void print_help(FILE *out, const char *argv0, const char *version)
 	fprintf(out, "\t-h --help          This message and exit\n");
 }
 
-coordinate_plane_s *coordinate_plane_new_from_args(int argc, char **argv,
-						   const char *version)
+struct coordinate_plane *coordinate_plane_new_from_args(int argc, char **argv,
+							const char *version)
 {
-	coord_options_s options;
+	struct coord_options options;
 	coord_options_init(&options);
 	coord_options_parse_argv(&options, argc, argv, stdout);
 	coord_options_rationalize(&options);
@@ -305,14 +305,14 @@ coordinate_plane_s *coordinate_plane_new_from_args(int argc, char **argv,
 		exit(EXIT_SUCCESS);
 	}
 
-	ldxy_s seed = { options.seed_x, options.seed_y };
-	ldxy_s center = { options.center_x, options.center_y };
+	struct ldxy seed = { options.seed_x, options.seed_y };
+	struct ldxy center = { options.center_x, options.center_y };
 	long double resolution_x =
 	    (options.x_max - options.x_min) / (1.0 * options.win_width);
 	long double resolution_y =
 	    (options.y_max - options.y_min) / (1.0 * options.win_height);
 
-	coordinate_plane_s *plane =
+	struct coordinate_plane *plane =
 	    coordinate_plane_new(argv[0], options.win_width, options.win_height,
 				 center, resolution_x, resolution_y,
 				 options.function, seed,

@@ -2,17 +2,15 @@
 /* rgb-hsv.c: colors */
 /* Copyright (C) 2020-2026 Eric Herman <eric@freesa.org> */
 
+#include <assert.h>
 #include <math.h>
 
 #include "rgb-hsv.h"
 
-int rgb24_from_rgb(rgb24_s *out, rgb_s in)
+int rgb_24_from_rgb_d(struct rgb_24 *out, struct rgb_d in)
 {
-#ifndef NDEBUG
-	if (!out) {
-		return 1;
-	}
-#endif
+	assert(out);
+
 	out->red = 255 * in.red;
 	out->green = 255 * in.green;
 	out->blue = 255 * in.blue;
@@ -20,13 +18,11 @@ int rgb24_from_rgb(rgb24_s *out, rgb_s in)
 	return 0;
 }
 
-int rgb24_from_uint32(rgb24_s *out, uint32_t in)
+int rgb_24_from_uint32(struct rgb_24 *out, uint32_t in)
 {
-#ifndef NDEBUG
-	if (!out) {
-		return 1;
-	}
-#endif
+
+	assert(out);
+
 	out->red = 0xFF & (in >> 16);
 	out->green = 0xFF & (in >> 8);
 	out->blue = 0xFF & (in);
@@ -34,37 +30,32 @@ int rgb24_from_uint32(rgb24_s *out, uint32_t in)
 	return 0;
 }
 
-uint32_t rgb24_to_uint32(rgb24_s rgb)
+uint32_t rgb_24_to_uint32(struct rgb_24 rgb)
 {
 	uint32_t urgb = ((rgb.red << 16) + (rgb.green << 8) + rgb.blue);
 	return urgb;
 }
 
-#ifndef NDEBUG
-static int invalid_hsv_s(hsv_s hsv)
+int invalid_hsv(struct hsv_d hsv)
 {
 	if (!(hsv.hue >= 0.0 && hsv.hue <= 360.0)) {
 		return 1;
 	}
-	if (!(hsv.sat >= 0 && hsv.sat <= 1.0)) {
+	if (!(hsv.sat >= 0.0 && hsv.sat <= 1.0)) {
 		return 1;
 	}
-	if (!(hsv.val >= 0 && hsv.val <= 1.0)) {
+	if (!(hsv.val >= 0.0 && hsv.val <= 1.0)) {
 		return 1;
 	}
 	return 0;
 }
-#endif
 
 // https://dystopiancode.blogspot.com/2012/06/hsv-rgb-conversion-algorithms-in-c.html
 // https://en.wikipedia.org/wiki/HSL_and_HSV
-int rgb_from_hsv(rgb_s *rgb, hsv_s hsv)
+int rgb_d_from_hsv_d(struct rgb_d *rgb, struct hsv_d hsv)
 {
-#ifndef NDEBUG
-	if (!rgb || invalid_hsv_s(hsv)) {
-		return 1;
-	}
-#endif
+	assert(rgb);
+	assert(!invalid_hsv(hsv));
 
 	double hue = hsv.hue == 360.0 ? 0.0 : hsv.hue;
 	double chroma = hsv.val * hsv.sat;

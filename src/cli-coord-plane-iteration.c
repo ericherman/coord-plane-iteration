@@ -12,7 +12,7 @@
 #define Make_valgrind_happy 0
 #endif
 
-int coord_plane_char_update(coordinate_plane_s *plane, char c)
+int coord_plane_char_update(struct coordinate_plane *plane, char c)
 {
 	switch (c) {
 	case 'q':
@@ -56,7 +56,7 @@ void fclear_screen(FILE *out)
 	fflush(out);
 }
 
-void fprint_coordinate_plane_ascii(FILE *out, coordinate_plane_s *plane)
+void fprint_coordinate_plane_ascii(FILE *out, struct coordinate_plane *plane)
 {
 	fclear_screen(out);
 	uint32_t win_height = coordinate_plane_win_height(plane);
@@ -88,7 +88,7 @@ int main(int argc, char **argv)
 	pray_for_debug_info_on_segfault();
 
 	const char *version = CLI_COORD_PLANE_ITERATION_VERSION;
-	coordinate_plane_s *plane =
+	struct coordinate_plane *plane =
 	    coordinate_plane_new_from_args(argc, argv, version);
 
 	size_t it_per_frame = 1;

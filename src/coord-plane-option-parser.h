@@ -10,8 +10,8 @@
 #include <stdio.h>
 
 void print_help(FILE *out, const char *argv0, const char *version);
-coordinate_plane_s *coordinate_plane_new_from_args(int argc, char **argv,
-						   const char *version);
-void print_command_line(coordinate_plane_s *plane, FILE *out);
+struct coordinate_plane *coordinate_plane_new_from_args(int argc, char **argv,
+							const char *version);
+void print_command_line(struct coordinate_plane *plane, FILE *out);
 
 #endif /* COORD_PLANE_OPTION_PARSER_H */

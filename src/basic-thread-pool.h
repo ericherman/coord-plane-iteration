@@ -8,20 +8,19 @@
 #include <threads.h>
 
 struct basic_thread_pool;
-typedef struct basic_thread_pool basic_thread_pool_s;
 
-basic_thread_pool_s *basic_thread_pool_new(size_t num_threads);
+struct basic_thread_pool *basic_thread_pool_new(size_t num_threads);
 
-int basic_thread_pool_add(basic_thread_pool_s *pool, thrd_start_t func,
+int basic_thread_pool_add(struct basic_thread_pool *pool, thrd_start_t func,
 			  void *arg);
 
-int basic_thread_pool_wait(basic_thread_pool_s *pool);
+int basic_thread_pool_wait(struct basic_thread_pool *pool);
 
-size_t basic_thread_pool_size(basic_thread_pool_s *pool);
+size_t basic_thread_pool_size(struct basic_thread_pool *pool);
 
-size_t basic_thread_pool_queue_size(basic_thread_pool_s *pool);
+size_t basic_thread_pool_queue_size(struct basic_thread_pool *pool);
 
 /* discards any unfinished work */
-void basic_thread_pool_stop_and_free(basic_thread_pool_s **pool_ref);
+void basic_thread_pool_stop_and_free(struct basic_thread_pool **pool_ref);
 
 #endif /* BASIC_THREAD_POOL_H */

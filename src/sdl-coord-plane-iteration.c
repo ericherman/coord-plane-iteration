@@ -37,25 +37,26 @@ static uint64_t time_in_usec(void)
 	return time_in_micros;
 }
 
-typedef struct sdl_texture_buffer {
+struct sdl_texture_buffer {
 	SDL_Texture *texture;
-	pixel_buffer_s *pixel_buf;
-} sdl_texture_buffer_s;
+	struct pixel_buffer *pixel_buf;
+};
 
-typedef struct sdl_event_context {
-	sdl_texture_buffer_s *texture_buf;
+struct sdl_event_context {
+	struct sdl_texture_buffer *texture_buf;
 	SDL_Window *window;
 	Uint32 win_id;
 	SDL_Renderer *renderer;
 	SDL_Event *event;
 	bool resized;
-} sdl_event_context_s;
+};
+struct sdl_event_context;
 
 static void sdl_resize_texture_buf(SDL_Window *window,
 				   SDL_Renderer *renderer,
-				   sdl_texture_buffer_s *texture_buf)
+				   struct sdl_texture_buffer *texture_buf)
 {
-	pixel_buffer_s *pixel_buf = texture_buf->pixel_buf;
+	struct pixel_buffer *pixel_buf = texture_buf->pixel_buf;
 
 	int height, width;
 	SDL_GetWindowSize(window, &width, &height);
@@ -97,7 +98,7 @@ static void sdl_blit_bytes(SDL_Renderer *renderer, SDL_Texture *texture,
 }
 
 static void sdl_blit_texture(SDL_Renderer *renderer,
-			     sdl_texture_buffer_s *texture_buf)
+			     struct sdl_texture_buffer *texture_buf)
 {
 	SDL_Texture *texture = texture_buf->texture;
 	const void *pixels = texture_buf->pixel_buf->pixels;
@@ -106,8 +107,8 @@ static void sdl_blit_texture(SDL_Renderer *renderer,
 	sdl_blit_bytes(renderer, texture, pixels, pitch);
 }
 
-static void sdl_process_key_event(sdl_event_context_s *event_ctx,
-				  human_input_s *input)
+static void sdl_process_key_event(struct sdl_event_context *event_ctx,
+				  struct human_input *input)
 {
 	int is_down = event_ctx->event->key.state == SDL_PRESSED;
 	int was_down = ((event_ctx->event->key.repeat != 0)
@@ -188,8 +189,8 @@ static void sdl_process_key_event(sdl_event_context_s *event_ctx,
 	};
 }
 
-static void sdl_process_mouse_event(sdl_event_context_s *event_ctx,
-				    human_input_s *input)
+static void sdl_process_mouse_event(struct sdl_event_context *event_ctx,
+				    struct human_input *input)
 {
 	int x, y;
 	switch (event_ctx->event->type) {
@@ -211,8 +212,8 @@ static void sdl_process_mouse_event(sdl_event_context_s *event_ctx,
 	}
 }
 
-static int sdl_process_event(sdl_event_context_s *event_ctx,
-			     human_input_s *input)
+static int sdl_process_event(struct sdl_event_context *event_ctx,
+			     struct human_input *input)
 {
 	switch (event_ctx->event->type) {
 	case SDL_QUIT:
@@ -300,8 +301,8 @@ static int sdl_process_event(sdl_event_context_s *event_ctx,
 	return 0;
 }
 
-void sdl_coord_plane_iteration(coordinate_plane_s *plane,
-			       pixel_buffer_s *virtual_win)
+void sdl_coord_plane_iteration(struct coordinate_plane *plane,
+			       struct pixel_buffer *virtual_win)
 {
 	int window_x = coordinate_plane_win_width(plane);
 	int window_y = coordinate_plane_win_height(plane);
@@ -312,7 +313,7 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane,
 		    SDL_GetError());
 	}
 
-	sdl_texture_buffer_s texture_buf;
+	struct sdl_texture_buffer texture_buf;
 	texture_buf.texture = NULL;
 	texture_buf.pixel_buf = virtual_win;
 
@@ -340,7 +341,7 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane,
 	sdl_resize_texture_buf(window, renderer, &texture_buf);
 
 	SDL_Event event;
-	sdl_event_context_s event_ctx;
+	struct sdl_event_context event_ctx;
 	event_ctx.event = &event;
 	event_ctx.texture_buf = &texture_buf;
 	event_ctx.renderer = renderer;
@@ -355,12 +356,12 @@ void sdl_coord_plane_iteration(coordinate_plane_s *plane,
 	uint64_t frames_since_print = 0;
 	uint64_t frame_count = 0;
 
-	human_input_s input[2];
+	struct human_input input[2];
 	human_input_init(&input[0]);
 	human_input_init(&input[1]);
-	human_input_s *tmp_input = NULL;
-	human_input_s *new_input = &input[1];
-	human_input_s *old_input = &input[0];
+	struct human_input *tmp_input = NULL;
+	struct human_input *new_input = &input[1];
+	struct human_input *old_input = &input[0];
 
 	int shutdown = 0;
 	while (!shutdown) {
@@ -500,11 +501,11 @@ int main(int argc, char **argv)
 	pray_for_debug_info_on_segfault();
 
 	const char *version = SDL_COORD_PLANE_ITERATION_VERSION;
-	coordinate_plane_s *plane =
+	struct coordinate_plane *plane =
 	    coordinate_plane_new_from_args(argc, argv, version);
 
 	size_t palette_len = 1024;
-	pixel_buffer_s *virtual_win =
+	struct pixel_buffer *virtual_win =
 	    pixel_buffer_new_from_plane(plane, palette_len);
 
 	sdl_coord_plane_iteration(plane, virtual_win);

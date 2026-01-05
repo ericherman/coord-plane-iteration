@@ -18,157 +18,95 @@
  sizeof(double):         8 bytes,  64 bits
  sizeof(long double):   16 bytes, 128 bits
 */
-typedef struct ldxy {
+struct ldxy {
 	long double x;
 	long double y;
-} ldxy_s;
-
-typedef struct iterxy {
-	ldxy_s seed;
-
-	/* coordinate location */
-	ldxy_s c;
-
-	/* calculated next location */
-	ldxy_s z;
-
-	uint32_t escaped;
-	uint32_t trapped;
-} iterxy_s;
-
-typedef void (*pfunc_init_f)(iterxy_s *p, ldxy_s xy, ldxy_s seed);
-typedef void (*pfunc_f)(iterxy_s *p);
-typedef bool (*pfunc_escape_f)(ldxy_s xy);
-
-typedef struct named_pfunc {
-	pfunc_init_f pfunc_init;
-	pfunc_escape_f pfunc_escape;
-	pfunc_f pfunc;
-	const char *name;
-} named_pfunc_s;
+};
 
 #define pfuncs_mandelbrot_idx	0U
 #define pfuncs_julia_idx	(pfuncs_mandelbrot_idx + 1U)
-extern named_pfunc_s pfuncs[];
 extern const size_t pfuncs_len;
 
-struct coordinate_plane_iterate_context;
-typedef struct coordinate_plane_iterate_context
-    coordinate_plane_iterate_context_s;
+struct coordinate_plane;
 
-struct coordinate_plane {
-	const char *argv0;
+struct coordinate_plane *coordinate_plane_reset(struct coordinate_plane *plane,
+						uint32_t win_width,
+						uint32_t win_height,
+						struct ldxy center,
+						long double resolution_x,
+						long double resolution_y,
+						size_t pfuncs_idx,
+						struct ldxy seed);
 
-	uint32_t win_width;
-	uint32_t win_height;
+struct coordinate_plane *coordinate_plane_new(const char *program_name,
+					      uint32_t win_width,
+					      uint32_t win_height,
+					      struct ldxy center,
+					      long double resolution_x,
+					      long double resolution_y,
+					      size_t pfunc_idx,
+					      struct ldxy seed,
+					      uint64_t halt_after,
+					      uint32_t skip_rounds,
+					      uint32_t num_threads);
 
-	ldxy_s center;
-	long double resolution_x;
-	long double resolution_y;
+void coordinate_plane_free(struct coordinate_plane *plane);
 
-	uint64_t iteration_count;
-	size_t escaped;
-	size_t trapped;
-	size_t not_escaped;
-	uint64_t halt_after;
-	uint32_t skip_rounds;
+void coordinate_plane_resize(struct coordinate_plane *plane,
+			     uint32_t new_win_width, uint32_t new_win_height,
+			     bool preserve_ratio);
 
-#ifndef SKIP_THREADS
-	basic_thread_pool_s *tpool;
-#else
-	void *tpool;
-#endif
-	uint32_t num_threads;
-	coordinate_plane_iterate_context_s *contexts;
-	size_t contexts_len;
+size_t coordinate_plane_iterate(struct coordinate_plane *plane, uint32_t steps);
 
-	size_t pfuncs_idx;
-	ldxy_s seed;
+void coordinate_plane_next_function(struct coordinate_plane *plane);
 
-	iterxy_s *all_points;
-	size_t all_points_len;
+void coordinate_plane_zoom_in(struct coordinate_plane *plane);
 
-	iterxy_s **scratch;
-	size_t scratch_len;
+void coordinate_plane_zoom_out(struct coordinate_plane *plane);
 
-	iterxy_s **points_not_escaped;
-	size_t points_not_escaped_len;
+void coordinate_plane_pan_left(struct coordinate_plane *plane);
 
-	size_t unchanged;
-};
-typedef struct coordinate_plane coordinate_plane_s;
+void coordinate_plane_pan_right(struct coordinate_plane *plane);
 
-coordinate_plane_s *coordinate_plane_reset(coordinate_plane_s *plane,
-					   uint32_t win_width,
-					   uint32_t win_height,
-					   ldxy_s center,
-					   long double resolution_x,
-					   long double resolution_y,
-					   size_t pfuncs_idx, ldxy_s seed);
+void coordinate_plane_pan_up(struct coordinate_plane *plane);
 
-coordinate_plane_s *coordinate_plane_new(const char *program_name,
-					 uint32_t win_width,
-					 uint32_t win_height,
-					 ldxy_s center,
-					 long double resolution_x,
-					 long double resolution_y,
-					 size_t pfunc_idx,
-					 ldxy_s seed,
-					 uint64_t halt_after,
-					 uint32_t skip_rounds,
-					 uint32_t num_threads);
+void coordinate_plane_pan_down(struct coordinate_plane *plane);
 
-void coordinate_plane_free(coordinate_plane_s *plane);
-
-void coordinate_plane_resize(coordinate_plane_s *plane, uint32_t new_win_width,
-			     uint32_t new_win_height, bool preserve_ratio);
-
-size_t coordinate_plane_iterate(coordinate_plane_s *plane, uint32_t steps);
-
-void coordinate_plane_next_function(coordinate_plane_s *plane);
-
-void coordinate_plane_zoom_in(coordinate_plane_s *plane);
-
-void coordinate_plane_zoom_out(coordinate_plane_s *plane);
-
-void coordinate_plane_pan_left(coordinate_plane_s *plane);
-
-void coordinate_plane_pan_right(coordinate_plane_s *plane);
-
-void coordinate_plane_pan_up(coordinate_plane_s *plane);
-
-void coordinate_plane_pan_down(coordinate_plane_s *plane);
-
-void coordinate_plane_recenter(coordinate_plane_s *plane,
+void coordinate_plane_recenter(struct coordinate_plane *plane,
 			       uint32_t x, uint32_t y);
 
-void coordinate_plane_threads_more(coordinate_plane_s *plane);
+void coordinate_plane_threads_more(struct coordinate_plane *plane);
 
-void coordinate_plane_threads_less(coordinate_plane_s *plane);
+void coordinate_plane_threads_less(struct coordinate_plane *plane);
 
-uint64_t coordinate_plane_escaped(coordinate_plane_s *plane, uint32_t x,
+uint64_t coordinate_plane_escaped(struct coordinate_plane *plane, uint32_t x,
 				  uint32_t y);
-uint64_t coordinate_plane_iteration_count(coordinate_plane_s *plane);
+uint64_t coordinate_plane_iteration_count(struct coordinate_plane *plane);
 
-uint32_t coordinate_plane_win_width(coordinate_plane_s *plane);
-uint32_t coordinate_plane_win_height(coordinate_plane_s *plane);
-long double coordinate_plane_x_min(coordinate_plane_s *plane);
-long double coordinate_plane_y_min(coordinate_plane_s *plane);
-long double coordinate_plane_x_max(coordinate_plane_s *plane);
-long double coordinate_plane_y_max(coordinate_plane_s *plane);
-const char *coordinate_plane_program(coordinate_plane_s *plane);
-const char *coordinate_plane_function_name(coordinate_plane_s *plane);
-size_t coordinate_plane_function_index(coordinate_plane_s *plane);
-void coordinate_plane_center(coordinate_plane_s *plane, ldxy_s *out);
-void coordinate_plane_seed(coordinate_plane_s *plane, ldxy_s *out);
-long double coordinate_plane_resolution_x(coordinate_plane_s *plane);
-long double coordinate_plane_resolution_y(coordinate_plane_s *plane);
-uint64_t coordinate_plane_halt_after(coordinate_plane_s *plane);
-uint32_t coordinate_plane_skip_rounds(coordinate_plane_s *plane);
-size_t coordinate_plane_escaped_count(coordinate_plane_s *plane);
-size_t coordinate_plane_not_escaped_count(coordinate_plane_s *plane);
-size_t coordinate_plane_trapped_count(coordinate_plane_s *plane);
-size_t coordinate_plane_unchanged(coordinate_plane_s *plane);
-size_t coordinate_plane_num_threads(coordinate_plane_s *plane);
+uint32_t coordinate_plane_win_width(struct coordinate_plane *plane);
+uint32_t coordinate_plane_win_height(struct coordinate_plane *plane);
+long double coordinate_plane_x_min(struct coordinate_plane *plane);
+long double coordinate_plane_y_min(struct coordinate_plane *plane);
+long double coordinate_plane_x_max(struct coordinate_plane *plane);
+long double coordinate_plane_y_max(struct coordinate_plane *plane);
+const char *coordinate_plane_program(struct coordinate_plane *plane);
+const char *coordinate_plane_function_name(struct coordinate_plane *plane);
+size_t coordinate_plane_function_index(struct coordinate_plane *plane);
+void coordinate_plane_center(struct coordinate_plane *plane, struct ldxy *out);
+void coordinate_plane_seed(struct coordinate_plane *plane, struct ldxy *out);
+long double coordinate_plane_resolution_x(struct coordinate_plane *plane);
+long double coordinate_plane_resolution_y(struct coordinate_plane *plane);
+uint64_t coordinate_plane_halt_after(struct coordinate_plane *plane);
+uint32_t coordinate_plane_skip_rounds(struct coordinate_plane *plane);
+size_t coordinate_plane_escaped_count(struct coordinate_plane *plane);
+size_t coordinate_plane_not_escaped_count(struct coordinate_plane *plane);
+size_t coordinate_plane_trapped_count(struct coordinate_plane *plane);
+size_t coordinate_plane_unchanged(struct coordinate_plane *plane);
+size_t coordinate_plane_num_threads(struct coordinate_plane *plane);
+
+#ifndef SKIP_THREADS
+struct basic_thread_pool *coordinate_plane_thread_pool(struct coordinate_plane
+						       *plane);
+#endif
 
 #endif /* COORD_PLANE_ITERATION_H */

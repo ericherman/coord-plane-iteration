@@ -13,12 +13,12 @@
 #include "logerr-die.h"
 #include "alloc-or-die.h"
 
-#ifndef Make_valgrind_happy
-#define Make_valgrind_happy 0
-#endif
+#define terrorf(file, func, line, ...) \
+	lffl_printf(_err_stream, file, func, line, __VA_ARGS__)
 
 /* Thread command, check return code, and whine if not success */
-static int tc(const char *str_thrd_call, int thrd_err, size_t our_id)
+static int tc(const char *file, const char *func, long line,
+	      const char *str_thrd_call, int thrd_err, size_t our_id)
 {
 	static_assert(thrd_success == 0);
 
@@ -26,105 +26,114 @@ static int tc(const char *str_thrd_call, int thrd_err, size_t our_id)
 	case thrd_success:
 		break;
 	case thrd_nomem:
-		errorf("%s for %zu: thrd_nomem", str_thrd_call, our_id);
+		terrorf(file, func, line, "%s for %zu: thrd_nomem",
+			str_thrd_call, our_id);
 		break;
 	case thrd_error:
-		errorf("%s for %zu: thrd_error", str_thrd_call, our_id);
+		terrorf(file, func, line, "%s for %zu: thrd_error",
+			str_thrd_call, our_id);
 		break;
 	case thrd_timedout:
-		errorf("%s for %zu: thrd_timedout", str_thrd_call, our_id);
+		terrorf(file, func, line, "%s for %zu: thrd_timedout",
+			str_thrd_call, our_id);
 		break;
 	case thrd_busy:
-		errorf("%s for %zu: thrd_busy", str_thrd_call, our_id);
+		terrorf(file, func, line, "%s for %zu: thrd_busy",
+			str_thrd_call, our_id);
 		break;
 	default:
-		errorf("%s for %zu: %d?", str_thrd_call, our_id, thrd_err);
+		terrorf(file, func, line, "%s for %zu: %d?", str_thrd_call,
+			our_id, thrd_err);
 		break;
 	}
 	return thrd_err;
 }
 
 #define Tc(thrd_call, our_id) \
-	tc(#thrd_call, thrd_call, our_id)
+	tc(__FILE__, __func__, __LINE__, #thrd_call, thrd_call, our_id)
 
-typedef struct basic_thread_pool_todo {
+struct basic_thread_pool_todo {
 	struct basic_thread_pool_todo *next;
 	thrd_start_t func;
 	void *arg;
-} basic_thread_pool_todo_s;
+};
 
-typedef struct basic_thread_pool_loop_context {
+struct basic_thread_pool_loop_context {
 	size_t id;
-	basic_thread_pool_s *pool;
-} basic_thread_pool_loop_context_s;
+	struct basic_thread_pool *pool;
+};
 
 struct basic_thread_pool {
 	mtx_t *mutex;
-	cnd_t *todo;
-	cnd_t *done;
+	cnd_t *wake;
 	bool stop;
 	thrd_t *threads;
-	basic_thread_pool_loop_context_s *thread_contexts;
+	struct basic_thread_pool_loop_context *thread_contexts;
 	size_t threads_len;
 	size_t num_working;
-	basic_thread_pool_todo_s *first;
-	basic_thread_pool_todo_s *last;
+	struct basic_thread_pool_todo *first;
+	struct basic_thread_pool_todo *last;
 };
-/* typedef struct basic_thread_pool basic_thread_pool_s; */
+
+static int basic_thread_pool_run_task(struct basic_thread_pool_todo *elem)
+{
+	assert(elem);
+	void *arg = elem->arg;
+	thrd_start_t func = elem->func;
+	return func(arg);
+}
 
 static int basic_thread_pool_loop(void *arg)
 {
-	basic_thread_pool_loop_context_s *ctx = arg;
+	struct basic_thread_pool_loop_context *ctx = arg;
 	size_t id = ctx->id;
-	basic_thread_pool_s *pool = ctx->pool;
+	struct basic_thread_pool *pool = ctx->pool;
 
 	while (true) {
 		Tc(mtx_lock(pool->mutex), id);
 		while (!pool->stop && pool->first == NULL) {
-			Tc(cnd_wait(pool->todo, pool->mutex), id);
+			Tc(cnd_wait(pool->wake, pool->mutex), id);
 		}
 		if (pool->stop) {
-			Tc(cnd_broadcast(pool->done), id);
+			Tc(cnd_broadcast(pool->wake), id);
 			Tc(mtx_unlock(pool->mutex), id);
 			break;
 		}
 
 		if (pool->first != NULL) {
-			basic_thread_pool_todo_s *elem = pool->first;
+			struct basic_thread_pool_todo *elem = pool->first;
 			pool->first = elem->next;
 			++(pool->num_working);
 
 			Tc(mtx_unlock(pool->mutex), id);
-			if (elem != NULL) {
-				void *arg = elem->arg;
-				thrd_start_t func = elem->func;
-				free(elem);
-				func(arg);
-			}
+
+			basic_thread_pool_run_task(elem);
+
+			free(elem);
+
 			Tc(mtx_lock(pool->mutex), id);
 
 			--(pool->num_working);
-			Tc(cnd_broadcast(pool->done), id);
+			Tc(cnd_broadcast(pool->wake), id);
 		}
 		Tc(mtx_unlock(pool->mutex), id);
 	}
 	return 0;
 }
 
-basic_thread_pool_s *basic_thread_pool_new(size_t num_threads)
+struct basic_thread_pool *basic_thread_pool_new(size_t num_threads)
 {
-	basic_thread_pool_s *pool = NULL;
+	struct basic_thread_pool *pool = NULL;
 	num_threads = num_threads ? num_threads : 1;
 
-	pool = calloc_or_die("pool", 1, sizeof(basic_thread_pool_s));
+	pool = calloc_or_die("pool", 1, sizeof(struct basic_thread_pool));
 	pool->mutex = calloc_or_die("pool->mutex", 1, sizeof(mtx_t));
-	pool->todo = calloc_or_die("pool->todo", 1, sizeof(cnd_t));
-	pool->done = calloc_or_die("pool->done", 1, sizeof(cnd_t));
+	pool->wake = calloc_or_die("pool->wake", 1, sizeof(cnd_t));
 	pool->threads =
 	    calloc_or_die("pool->threads", num_threads, sizeof(thrd_t));
 	pool->thread_contexts =
 	    calloc_or_die("pool->thread_contexts", num_threads,
-			  sizeof(basic_thread_pool_loop_context_s));
+			  sizeof(struct basic_thread_pool_loop_context));
 
 	size_t id = 0;
 
@@ -132,12 +141,12 @@ basic_thread_pool_s *basic_thread_pool_new(size_t num_threads)
 		die("could not mtx_init(%s, %d)\n", "pool->mutex", mtx_plain);
 	}
 
-	if (Tc(cnd_init(pool->todo), id)) {
-		die("could not cnd_init(%s)\n", "pool->todo");
+	if (Tc(cnd_init(pool->wake), id)) {
+		die("could not cnd_init(%s)\n", "pool->wake");
 	}
 
-	if (Tc(cnd_init(pool->done), id)) {
-		die("could not cnd_init(%s)\n", "pool->done");
+	if (Tc(cnd_init(pool->wake), id)) {
+		die("could not cnd_init(%s)\n", "pool->wake");
 	}
 
 	pool->threads_len = num_threads;
@@ -152,25 +161,20 @@ basic_thread_pool_s *basic_thread_pool_new(size_t num_threads)
 		if (Tc(thrd_create(thread, func, arg), id)) {
 			die("could not thrd_create (id: %zu)", id);
 		}
-#if !Make_valgrind_happy
-		else {
-			Tc(thrd_detach(*thread), id);
-		}
-#endif
 	}
 
 	return pool;
 }
 
-int basic_thread_pool_add(basic_thread_pool_s *pool, thrd_start_t func,
+int basic_thread_pool_add(struct basic_thread_pool *pool, thrd_start_t func,
 			  void *arg)
 {
 	size_t id = 0;
 	assert(pool);
 	assert(func);
 
-	basic_thread_pool_todo_s *elem;
-	elem = calloc_or_log("elem", 1, sizeof(basic_thread_pool_todo_s));
+	struct basic_thread_pool_todo *elem;
+	elem = calloc_or_log("elem", 1, sizeof(struct basic_thread_pool_todo));
 	if (!elem) {
 		return 1;
 	}
@@ -194,7 +198,7 @@ int basic_thread_pool_add(basic_thread_pool_s *pool, thrd_start_t func,
 		pool->last->next = elem;
 		pool->last = elem;
 	}
-	int err = Tc(cnd_broadcast(pool->todo), id);
+	int err = Tc(cnd_broadcast(pool->wake), id);
 	if (Tc(mtx_unlock(pool->mutex), id)) {
 		die("could not mtx_unlock(pool->mutex) (%p) (id: %zu)",
 		    pool->mutex, id);
@@ -203,7 +207,7 @@ int basic_thread_pool_add(basic_thread_pool_s *pool, thrd_start_t func,
 	return err;
 }
 
-int basic_thread_pool_wait(basic_thread_pool_s *pool)
+int basic_thread_pool_wait(struct basic_thread_pool *pool)
 {
 	size_t id = 0;
 	assert(pool);
@@ -212,7 +216,7 @@ int basic_thread_pool_wait(basic_thread_pool_s *pool)
 	}
 	int err = 0;
 	while ((pool->num_working > 0) || (pool->first != NULL)) {
-		if (Tc(cnd_wait(pool->done, pool->mutex), id)) {
+		if (Tc(cnd_wait(pool->wake, pool->mutex), id)) {
 			err = 1;
 		}
 	}
@@ -222,19 +226,19 @@ int basic_thread_pool_wait(basic_thread_pool_s *pool)
 	return err;
 }
 
-size_t basic_thread_pool_size(basic_thread_pool_s *pool)
+size_t basic_thread_pool_size(struct basic_thread_pool *pool)
 {
 	assert(pool);
 	return pool->threads_len;
 }
 
-size_t basic_thread_pool_queue_size(basic_thread_pool_s *pool)
+size_t basic_thread_pool_queue_size(struct basic_thread_pool *pool)
 {
 	size_t queue_size = 0;
 	if (Tc(mtx_lock(pool->mutex), 0)) {
 		die("failed to mtx_lock(%p), 0", pool->mutex);
 	}
-	basic_thread_pool_todo_s *elem = pool->first;
+	struct basic_thread_pool_todo *elem = pool->first;
 	while (elem) {
 		++queue_size;
 		elem = elem->next;
@@ -245,9 +249,9 @@ size_t basic_thread_pool_queue_size(basic_thread_pool_s *pool)
 	return queue_size;
 }
 
-void basic_thread_pool_stop_and_free(basic_thread_pool_s **pool_ref)
+void basic_thread_pool_stop_and_free(struct basic_thread_pool **pool_ref)
 {
-	basic_thread_pool_s *pool = *pool_ref;
+	struct basic_thread_pool *pool = *pool_ref;
 	size_t id = 0;
 	if (!pool) {
 		return;
@@ -258,29 +262,25 @@ void basic_thread_pool_stop_and_free(basic_thread_pool_s **pool_ref)
 	pool->stop = true;
 
 	while (pool->first != NULL) {
-		basic_thread_pool_todo_s *elem = pool->first;
+		struct basic_thread_pool_todo *elem = pool->first;
 		pool->first = elem->next;
 		free(elem);
 	}
 
-	Tc(cnd_broadcast(pool->todo), id);
+	Tc(cnd_broadcast(pool->wake), id);
 
 	while (pool->num_working > 0) {
-		Tc(cnd_broadcast(pool->todo), id);
-		Tc(cnd_wait(pool->done, pool->mutex), id);
+		Tc(cnd_broadcast(pool->wake), id);
+		Tc(cnd_wait(pool->wake, pool->mutex), id);
 	}
 
-	Tc(cnd_broadcast(pool->todo), id);
+	Tc(cnd_broadcast(pool->wake), id);
 	Tc(mtx_unlock(pool->mutex), id);
 
 	for (size_t i = 0; i < pool->threads_len; ++i) {
 		int result = 0;
 		thrd_t thread = pool->threads[i];
 		if (thread) {
-			/* Note: if Make_valgrind_happy, we're joining a
-			   thread which was not thrd_detach()-ed,
-			   this is undefined behavior, but works
-			   on amd64 linux with glibc */
 			Tc(thrd_join(thread, &result), id);
 		}
 		if (result) {
@@ -297,13 +297,9 @@ void basic_thread_pool_stop_and_free(basic_thread_pool_s **pool_ref)
 	free(pool->thread_contexts);
 	pool->thread_contexts = NULL;
 
-	cnd_destroy(pool->todo);
-	free(pool->todo);
-	pool->todo = NULL;
-
-	cnd_destroy(pool->done);
-	free(pool->done);
-	pool->done = NULL;
+	cnd_destroy(pool->wake);
+	free(pool->wake);
+	pool->wake = NULL;
 
 	mtx_destroy(pool->mutex);
 	free(pool->mutex);

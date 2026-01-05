@@ -178,17 +178,17 @@ tidy:
 		-T int8_t -T int16_t -T int32_t -T int64_t \
 		-T uint8_t -T uint16_t -T uint32_t -T uint64_t \
 		-T SDL_Window -T SDL_Renderer -T SDL_Event -T SDL_Texture \
-		-T sdl_event_context_s -T sdl_texture_buffer_s \
-		-T pixel_buffer_s -T keyboard_key_s -T human_input_s \
-		-T hsv_s -T rgb_s -T rgb24_s \
-		-T ldxy_s -T iterxy_s \
-		-T named_pfunc_s -T pfunc_f \
-		-T coordinate_plane_s \
-		-T coordinate_plane_iterate_context_s \
-		-T coord_options_s \
-		-T basic_thread_pool_s \
-		-T basic_thread_pool_todo_s \
-		-T basic_thread_pool_loop_context_s \
+		-T sdl_event_context -T sdl_texture_buffer \
+		-T pixel_buffer -T keyboard_key -T human_input \
+		-T hsv_d -T rgb_d -T rgb_24 \
+		-T ldxy -T iterxy \
+		-T named_pfunc -T pfunc_f \
+		-T coordinate_plane \
+		-T coordinate_plane_iterate_context \
+		-T coord_options \
+		-T basic_thread_pool \
+		-T basic_thread_pool_todo \
+		-T basic_thread_pool_loop_context \
 		src/*.c src/*.h
 
 .PHONY: clean
