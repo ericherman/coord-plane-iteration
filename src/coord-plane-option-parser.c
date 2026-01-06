@@ -2,12 +2,15 @@
 /* coord-plane-option-parser.c */
 /* Copyright (C) 2020-2026 Eric Herman <eric@freesa.org> */
 
-#include <coord-plane-option-parser.h>
-#include <math.h>
-#include <stdlib.h>
+#include "coord-plane-option-parser.h"
+
 #include <float.h>
 #include <getopt.h>
 #include <inttypes.h>
+#include <math.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
 
 #ifndef SKIP_THREADS
 #include <unistd.h>
@@ -52,6 +55,8 @@ void print_command_line(struct coordinate_plane *plane, FILE *out)
 struct coord_options {
 	int win_width;
 	int win_height;
+	int term_cols;
+	int term_rows;
 	long double x_min;
 	long double x_max;
 	long double y_min;
@@ -72,6 +77,8 @@ static void coord_options_init(struct coord_options *options)
 {
 	options->win_width = -1;
 	options->win_height = -1;
+	options->term_cols = -1;
+	options->term_rows = -1;
 	options->x_min = NAN;
 	options->x_max = NAN;
 	options->y_min = NAN;
@@ -86,6 +93,13 @@ static void coord_options_init(struct coord_options *options)
 	options->skip_rounds = -1;
 	options->version = 0;
 	options->help = 0;
+
+	struct winsize w;
+	memset(&w, 0x00, sizeof(struct winsize));
+	if (!ioctl(0, TIOCGWINSZ, &w)) {
+		options->term_cols = w.ws_col;
+		options->term_rows = w.ws_row;
+	}
 }
 
 static void coord_options_rationalize(struct coord_options *options)
@@ -100,14 +114,16 @@ static void coord_options_rationalize(struct coord_options *options)
 #ifndef NO_GUI
 		options->win_width = 800;
 #else
-		options->win_width = 79;
+		options->win_width =
+		    options->term_cols > 2 ? options->term_cols - 1 : 79;
 #endif
 	}
 	if (options->win_height < 1) {
 #ifndef NO_GUI
 		options->win_height = ((options->win_width * 3) / 4);
 #else
-		options->win_height = 24;
+		options->win_height =
+		    options->term_rows > 3 ? options->term_rows - 2 : 23;
 #endif
 	}
 	if (!isfinite(options->x_min)) {
