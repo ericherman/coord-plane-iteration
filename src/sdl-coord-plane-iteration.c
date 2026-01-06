@@ -16,6 +16,8 @@
 
 #define SDL_COORD_PLANE_ITERATION_VERSION "0.2.0"
 
+#include <assert.h>
+#include <sys/ioctl.h>
 #include <sys/time.h>
 #include <SDL.h>
 
@@ -301,6 +303,57 @@ static int sdl_process_event(struct sdl_event_context *event_ctx,
 	return 0;
 }
 
+#define print_bit(out, fmt, ...) \
+	if (total_printed < (cols - (10 + strlen(fmt)))) { \
+		printed = fprintf(out, fmt __VA_OPT__(,) __VA_ARGS__); \
+		assert(printed > 0); \
+		total_printed += printed; \
+	}
+
+static int print_log_line(struct coordinate_plane *plane, double fps,
+			  double ips, uint32_t it_per_frame)
+{
+	unsigned cols = 79;
+
+	struct winsize w;
+	memset(&w, 0x00, sizeof(struct winsize));
+	int fd = 0;
+	if (!ioctl(fd, TIOCGWINSZ, &w)) {
+		if (w.ws_col > 2) {
+			cols = (unsigned)(w.ws_col - 1);
+		}
+	}
+	if (cols < 20) {
+		return 1;
+	}
+
+	unsigned total_printed = 0;
+	int printed = 0;
+
+	uint64_t it_count = coordinate_plane_iteration_count(plane);
+	size_t escaped = coordinate_plane_escaped_count(plane);
+	size_t not_escaped = coordinate_plane_not_escaped_count(plane);
+	size_t unchanged = coordinate_plane_unchanged(plane);
+	size_t num_threads = coordinate_plane_num_threads(plane);
+
+	print_bit(stdout, "i:%" PRIu64, it_count);
+	print_bit(stdout, " escaped: %" PRIu64, escaped);
+	print_bit(stdout, " not: %" PRIu64, not_escaped);
+	print_bit(stdout, " unchanged for: %zu", unchanged);
+	print_bit(stdout, " ips: %.f", ips);
+	print_bit(stdout, " fps: %.f", fps);
+	print_bit(stdout, " ipf: %" PRIu32, it_per_frame);
+	print_bit(stdout, " threads: %zu", num_threads);
+
+	while (total_printed++ < (cols - 1))
+		fprintf(stdout, " ");
+
+	fprintf(stdout, "\r");
+	fflush(stdout);
+
+	return 0;
+}
+
 void sdl_coord_plane_iteration(struct coordinate_plane *plane,
 			       struct pixel_buffer *virtual_win)
 {
@@ -363,7 +416,6 @@ void sdl_coord_plane_iteration(struct coordinate_plane *plane,
 	struct human_input *new_input = &input[1];
 	struct human_input *old_input = &input[0];
 
-	int print_selector = 0;
 	int shutdown = 0;
 	while (!shutdown) {
 		tmp_input = new_input;
@@ -462,44 +514,7 @@ void sdl_coord_plane_iteration(struct coordinate_plane *plane,
 			last_print = now;
 			int fps_printer = 1;	// make configurable?
 			if (fps_printer) {
-				size_t escaped =
-				    coordinate_plane_escaped_count(plane);
-				size_t not_escaped =
-				    coordinate_plane_not_escaped_count(plane);
-				size_t unchanged =
-				    coordinate_plane_unchanged(plane);
-				coordinate_plane_num_threads(plane);
-				size_t num_threads =
-				    coordinate_plane_num_threads(plane);
-				int printed = 0;
-				if (print_selector++ > 8) {
-					print_selector = 0;
-				}
-				if (shutdown || print_selector < 5) {
-					printed =
-					    fprintf(stdout,
-						    "i:%" PRIu64 " escaped: %"
-						    PRIu64 " not: %" PRIu64
-						    " (unchanged for: %zu)",
-						    it_count, escaped,
-						    not_escaped, unchanged);
-				} else {
-					printed = fprintf(stdout,
-							  "i:%" PRIu64
-							  "    (per second: %.f"
-							  " fps: %.f per frame: %"
-							  PRIu32
-							  " threads: %zu)",
-							  it_count, ips, fps,
-							  it_per_frame,
-							  num_threads);
-				}
-				if (printed > 0) {
-					while (printed++ < 80)
-						fprintf(stdout, " ");
-				}
-				fprintf(stdout, "\r");
-				fflush(stdout);
+				print_log_line(plane, fps, ips, it_per_frame);
 			}
 		}
 	}
