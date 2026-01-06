@@ -4,10 +4,10 @@
 /* https://github.com/ericherman/coord-plane-iteration */
 
 #include <assert.h>
+#include <inttypes.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <math.h>
-#include <inttypes.h>
 
 #ifndef SKIP_THREADS
 #include <stdatomic.h>

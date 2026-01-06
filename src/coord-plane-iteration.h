@@ -6,9 +6,9 @@
 #ifndef COORD_PLANE_ITERATION_H
 #define COORD_PLANE_ITERATION_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdbool.h>
 
 #include "basic-thread-pool.h"
 

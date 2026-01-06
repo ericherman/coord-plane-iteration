@@ -3,9 +3,9 @@
 /* Copyright (C) 2020-2026 Eric Herman <eric@freesa.org> */
 
 #include <execinfo.h>
+#include <signal.h>
 #include <stdarg.h>
 #include <stdlib.h>
-#include <signal.h>
 
 #include "logerr-die.h"
 
