@@ -1,0 +1,34 @@
+coord-plane-iteration:
+
+This is a hands-on exploration of iterative functions, especially fractal math.
+
+SPDX-License-Identifier: LGPL-3.0-or-later
+
+
+build with:
+
+	make
+
+run with:
+
+	build/sdl-coord-plane-iteration
+
+or, if no SDL libs, then run with:
+
+	build/cli-coord-plane-iteration
+
+The "--help" will provide a list of launch options.
+
+The SDL version will allow changes to be made during the run.
+
+The "z" and "x" or the mouse-wheel can be used to change the zoom.
+
+The mouse button can be used to re-center the image.
+
+The escape key or "q" will quit;
+
+The spacebar will cycle between manelbort and julia functions.
+
+Pan with "wasd" or the arrow keys.
+
+Use "m" for more threads and "n" for fewer.
